@@ -57,7 +57,7 @@ class ContrastiveEstimationTrainer:
                 step += 1
                 if self.logger is not None:
                     self.logger.log(step, loss.item())
-                elif step % 100 == 0:
+                elif step % 1 == 0:
                     print("loss at step step " + str(step) + ":", loss.item())
 
                 if max_steps is not None and step >= max_steps:
