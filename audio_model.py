@@ -33,7 +33,10 @@ class AudioEncoder(nn.Module):
 
     def forward(self, x):
         for l, layer in enumerate(self.layers):
-            x = F.relu(layer(x))
+            if l < len(self.layers)-1:
+                x = F.relu(layer(x))
+            else:
+                x = layer(x)
 
         return x
 

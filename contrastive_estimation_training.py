@@ -50,6 +50,10 @@ class ContrastiveEstimationTrainer:
                 prediction_losses = -torch.sum(loss_logits, dim=1)
                 loss = torch.mean(prediction_losses)
 
+                if torch.sum(torch.isnan(loss)).item() > 0.:
+                    print("nan loss")
+                    return
+
                 self.model.zero_grad()
                 loss.backward()
                 optimizer.step()
