@@ -1,0 +1,115 @@
+import torch
+import torch.optim
+import torch.utils.data
+from audio_model import *
+
+
+class ContrastiveEstimationTrainer:
+    def __init__(self, model: AudioPredictiveCodingModel, dataset, visible_length, prediction_length, logger=None):
+        self.model = model
+        self.visible_length = visible_length
+        self.prediction_length = prediction_length
+        self.dataset = dataset
+        self.logger = logger
+
+    def train(self,
+              batch_size=32,
+              epochs=10,
+              lr=0.0001,
+              continue_training_at_step=0,
+              num_workers=1,
+              max_steps=None):
+        self.model.train()
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
+        dataloader = torch.utils.data.DataLoader(self.dataset,
+                                                 batch_size=batch_size,
+                                                 shuffle=True,
+                                                 num_workers=num_workers,
+                                                 pin_memory=True,
+                                                 drop_last=True)
+        step = continue_training_at_step
+
+        for current_epoch in range(epochs):
+            print("epoch", current_epoch)
+            for batch in iter(dataloader):
+                visible_input = batch[:, :self.visible_length].unsqueeze(1)
+                target_input = batch[:, -self.prediction_length:].unsqueeze(1)
+                predictions = self.model(visible_input)
+                targets = self.model.encoder(target_input).detach()  # TODO: should this really be detached? (Probably yes...)
+
+                targets = targets.permute(2, 1, 0)  # step, length, batch
+                predictions = predictions.permute(1, 0, 2)  # step, batch, length
+
+                scores = torch.exp(torch.matmul(predictions, targets).squeeze())  # step, data_batch, target_batch
+                score_sum = torch.sum(scores, dim=1)  # step, target_batch
+                valid_scores = torch.diagonal(scores, dim1=1, dim2=2)  # step, data_batch
+                loss_logits = torch.log(valid_scores / score_sum)  # step, batch
+
+                prediction_losses = -torch.sum(loss_logits, dim=1)
+                loss = torch.mean(prediction_losses)
+
+                self.model.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                step += 1
+                if self.logger is not None:
+                    self.logger.log(step, loss.item())
+                elif step % 100 == 0:
+                    print("loss at step step " + str(step) + ":", loss.item())
+
+                if max_steps is not None and step >= max_steps:
+                    return
+
+    def validate(self, batch_size=64, num_workers=1, max_steps=None):
+        self.model.eval()
+        total_loss = 0
+
+        dataloader = torch.utils.data.DataLoader(self.dataset,
+                                                 batch_size=batch_size,
+                                                 shuffle=False,
+                                                 num_workers=num_workers,
+                                                 pin_memory=True,
+                                                 drop_last=True)
+
+        total_prediction_losses = torch.zeros(self.model.prediction_steps, requires_grad=False)
+        total_accurate_predictions = torch.zeros(self.model.prediction_steps, requires_grad=False)
+        prediction_template = torch.range(0, batch_size - 1, dtype=torch.long).unsqueeze(0)
+        prediction_template = prediction_template.repeat(self.model.prediction_steps, 1)
+
+        if max_steps is None:
+            max_steps = len(dataloader)
+
+        for step, batch in enumerate(iter(dataloader)):
+            visible_input = batch[:, :self.visible_length].unsqueeze(1)
+            target_input = batch[:, -self.prediction_length:].unsqueeze(1)
+            predictions = self.model(visible_input)
+            targets = self.model.encoder(target_input).detach()
+
+            targets = targets.permute(2, 1, 0)  # step, length, batch
+            predictions = predictions.permute(1, 0, 2)  # step, batch, length
+
+            scores = torch.exp(torch.matmul(predictions, targets).squeeze())  # step, data_batch, target_batch
+            score_sum = torch.sum(scores, dim=1)  # step, target_batch
+            valid_scores = torch.diagonal(scores, dim1=1, dim2=2)  # step, data_batch
+            loss_logits = torch.log(valid_scores / score_sum)  # step, batch
+
+            # calculate prediction accuracy as the proportion of scores that are highest for the correct target
+            max_score_indices = torch.argmax(scores, dim=1)
+            correctly_predicted = torch.eq(prediction_template.type_as(max_score_indices), max_score_indices)
+            prediction_accuracy = torch.sum(correctly_predicted, dim=1).type_as(visible_input) / batch_size
+
+            prediction_losses = -torch.sum(loss_logits, dim=1)
+            loss = torch.mean(prediction_losses)
+
+            total_prediction_losses += prediction_losses.detach()
+            total_accurate_predictions += prediction_accuracy.detach()
+
+            if step+1 >= max_steps:
+                break
+
+        total_prediction_losses /= max_steps
+        total_accurate_predictions /= max_steps
+
+        self.model.train()
+        return total_prediction_losses, total_accurate_predictions
