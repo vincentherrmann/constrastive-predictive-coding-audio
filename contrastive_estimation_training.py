@@ -5,12 +5,13 @@ from audio_model import *
 
 
 class ContrastiveEstimationTrainer:
-    def __init__(self, model: AudioPredictiveCodingModel, dataset, visible_length, prediction_length, logger=None):
+    def __init__(self, model: AudioPredictiveCodingModel, dataset, visible_length, prediction_length, logger=None, device=None):
         self.model = model
         self.visible_length = visible_length
         self.prediction_length = prediction_length
         self.dataset = dataset
         self.logger = logger
+        self.device = device
 
     def train(self,
               batch_size=32,
@@ -32,6 +33,7 @@ class ContrastiveEstimationTrainer:
         for current_epoch in range(epochs):
             print("epoch", current_epoch)
             for batch in iter(dataloader):
+                batch = batch.to(device=self.device)
                 visible_input = batch[:, :self.visible_length].unsqueeze(1)
                 target_input = batch[:, -self.prediction_length:].unsqueeze(1)
                 predictions = self.model(visible_input)
