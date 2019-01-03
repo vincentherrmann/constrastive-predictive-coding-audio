@@ -46,7 +46,8 @@ class ContrastiveEstimationTrainer:
                 targets = targets.permute(2, 1, 0)  # step, length, batch
                 predictions = predictions.permute(1, 0, 2)  # step, batch, length
 
-                scores = torch.sigmoid(torch.matmul(predictions, targets)).squeeze() # step, data_batch, target_batch
+                #scores = torch.sigmoid(torch.matmul(predictions, targets)).squeeze() # step, data_batch, target_batch
+                scores = torch.matmul(predictions, targets).squeeze()  # step, data_batch, target_batch
                 scores = torch.exp(scores)
                 score_sum = torch.sum(scores, dim=1)#.detach()  # step, target_batch TODO: should this be detached?
                 valid_scores = torch.diagonal(scores, dim1=1, dim2=2)  # step, data_batch
