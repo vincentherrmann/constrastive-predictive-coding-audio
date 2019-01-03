@@ -37,6 +37,7 @@ class AudioEncoder(nn.Module):
                 x = F.relu(layer(x))
             else:
                 x = layer(x)
+                #x = torch.tanh(layer(x)) #/ layer.out_channels
 
         return x
 
@@ -82,7 +83,7 @@ class AudioPredictiveCodingModel(nn.Module):
         self.prediction_steps = prediction_steps
         self.encoder = encoder
         self.autoregressive_model = autoregressive_model
-        self.prediction_model = nn.Linear(in_features=ar_size, out_features=enc_size*prediction_steps)
+        self.prediction_model = nn.Linear(in_features=ar_size, out_features=enc_size*prediction_steps, bias=False)
 
     def forward(self, x):
         z = self.encoder(x)

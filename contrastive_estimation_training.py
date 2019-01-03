@@ -6,7 +6,7 @@ from audio_model import *
 
 class ContrastiveEstimationTrainer:
     def __init__(self, model: AudioPredictiveCodingModel, dataset, visible_length, prediction_length, logger=None, device=None,
-                 regularization=10.):
+                 regularization=10., validation_set=None):
         self.model = model
         self.visible_length = visible_length
         self.prediction_length = prediction_length
@@ -14,6 +14,7 @@ class ContrastiveEstimationTrainer:
         self.logger = logger
         self.device = device
         self.regularization = regularization
+        self.validation_set = validation_set
 
     def train(self,
               batch_size=32,
@@ -75,10 +76,13 @@ class ContrastiveEstimationTrainer:
                     return
 
     def validate(self, batch_size=64, num_workers=1, max_steps=None):
+        if self.validation_set is None:
+            print("No validation set")
+            return 0, 0
         self.model.eval()
         total_loss = 0
 
-        dataloader = torch.utils.data.DataLoader(self.dataset,
+        v_dataloader = torch.utils.data.DataLoader(self.validation_set,
                                                  batch_size=batch_size,
                                                  shuffle=False,
                                                  num_workers=num_workers,
@@ -91,9 +95,9 @@ class ContrastiveEstimationTrainer:
         prediction_template = prediction_template.repeat(self.model.prediction_steps, 1)
 
         if max_steps is None:
-            max_steps = len(dataloader)
+            max_steps = len(v_dataloader)
 
-        for step, batch in enumerate(iter(dataloader)):
+        for step, batch in enumerate(iter(v_dataloader)):
             visible_input = batch[:, :self.visible_length].unsqueeze(1)
             target_input = batch[:, -self.prediction_length:].unsqueeze(1)
             predictions = self.model(visible_input)

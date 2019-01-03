@@ -22,6 +22,7 @@ class AudioDataset(torch.utils.data.Dataset):
         self._length = 0
         self.start_samples = [0]
         self.dtype = dtype
+        self.dummy_load = False
 
         self.files = list_all_audio_files(self.location, allowed_types=['.wav'])
         self.calculate_length()
@@ -98,8 +99,11 @@ class AudioDataset(torch.utils.data.Dataset):
         return file_index, position_in_file
 
     def __getitem__(self, idx):
-        file_index, position_in_file = self.get_position(idx)
-        sample = self.load_sample(file_index, position_in_file, self._item_length)
+        if self.dummy_load:
+            sample = np.zeros([self._item_length])
+        else:
+            file_index, position_in_file = self.get_position(idx)
+            sample = self.load_sample(file_index, position_in_file, self._item_length)
 
         example = torch.from_numpy(sample[:self._item_length]).type(self.dtype)
         return example
