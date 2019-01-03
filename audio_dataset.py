@@ -4,6 +4,7 @@ import torch.utils.data
 import numpy as np
 import librosa as lr
 import bisect
+import torchaudio
 from pathlib import Path
 
 
@@ -38,21 +39,16 @@ class AudioDataset(torch.utils.data.Dataset):
 
     def load_file(self, file, frames=-1, start=0):
         if frames == -1:
-            data, _ = lr.load(file,
-                              sr=self.sampling_rate,
-                              mono=self.mono,
-                              dtype=np.float32)
-            return data
-        data, _ = lr.load(file,
-                          sr=self.sampling_rate,
-                          mono=self.mono,
-                          dtype=np.float32,
-                          offset=float(start)/self.sampling_rate,
-                          duration=float(frames)/self.sampling_rate)
-        #if frames == -1:
-        #    frames = data.size
-        #data = data[start:start+frames]
-        return data
+            data, _ = torchaudio.load(file,
+                                      normalization=True)
+            return data.squeeze().type(self.dtype)
+        if frames == 0:
+            print("Error: zero frames requested")
+        data, _ = torchaudio.load(file,
+                                  normalization=True,
+                                  num_frames=frames,
+                                  offset=start)
+        return data.squeeze().type(self.dtype)
 
     def calculate_length(self):
         """
@@ -62,7 +58,7 @@ class AudioDataset(torch.utils.data.Dataset):
         start_samples = [0]
         for idx in range(len(self.files)):
             file_data = self.load_file(str(self.files[idx]))
-            start_samples.append(start_samples[-1] + file_data.size)
+            start_samples.append(start_samples[-1] + file_data.shape[0])
         available_length = start_samples[-1] - self.item_length - 1
         self._length = math.floor(available_length / self.item_length)
         self.start_samples = start_samples
@@ -81,7 +77,7 @@ class AudioDataset(torch.utils.data.Dataset):
             next_sample = self.load_sample(file_index + 1,
                                            position_in_file=0,
                                            item_length=remaining_length)
-            sample = np.concatenate((this_sample, next_sample))
+            sample = torch.cat((this_sample, next_sample))
         return sample
 
     def get_position(self, idx):
@@ -105,7 +101,7 @@ class AudioDataset(torch.utils.data.Dataset):
             file_index, position_in_file = self.get_position(idx)
             sample = self.load_sample(file_index, position_in_file, self._item_length)
 
-        example = torch.from_numpy(sample[:self._item_length]).type(self.dtype)
+        example = sample[:self._item_length]
         return example
 
     def get_segment(self, position, file_index, duration=None):
