@@ -63,6 +63,7 @@ class ContrastiveEstimationTrainer:
                 #    print("mean score:", torch.mean(scores).item())
 
                 loss += self.regularization * (1-torch.mean(scores))**2  # regulate loss
+                loss = torch.clamp(loss, 0, 5)
 
                 self.model.zero_grad()
                 loss.backward()
