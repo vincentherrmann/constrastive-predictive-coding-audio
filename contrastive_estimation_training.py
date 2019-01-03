@@ -90,8 +90,8 @@ class ContrastiveEstimationTrainer:
                                                  pin_memory=True,
                                                  drop_last=True)
 
-        total_prediction_losses = torch.zeros(self.model.prediction_steps, requires_grad=False)
-        total_accurate_predictions = torch.zeros(self.model.prediction_steps, requires_grad=False)
+        total_prediction_losses = torch.zeros(self.model.prediction_steps, requires_grad=False).to(device=self.device)
+        total_accurate_predictions = torch.zeros(self.model.prediction_steps, requires_grad=False).to(device=self.device)
         prediction_template = torch.range(0, batch_size - 1, dtype=torch.long).unsqueeze(0)
         prediction_template = prediction_template.repeat(self.model.prediction_steps, 1)
 
