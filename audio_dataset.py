@@ -100,7 +100,7 @@ class AudioDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         if self.dummy_load:
-            sample = np.zeros([self._item_length])
+            sample = np.random.randn(self._item_length)
         else:
             file_index, position_in_file = self.get_position(idx)
             sample = self.load_sample(file_index, position_in_file, self._item_length)
