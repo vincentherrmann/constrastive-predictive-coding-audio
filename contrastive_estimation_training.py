@@ -58,8 +58,8 @@ class ContrastiveEstimationTrainer:
                 if torch.sum(torch.isnan(loss)).item() > 0.:
                     print("nan loss")
                     return
-                elif self.training_step % 20 == 0:
-                    print("mean score:", torch.mean(scores).item())
+                #elif self.training_step % 20 == 0:
+                #    print("mean score:", torch.mean(scores).item())
 
                 loss += self.regularization * (1.648 - torch.mean(scores))**2  # regulate loss
 
@@ -99,6 +99,7 @@ class ContrastiveEstimationTrainer:
             max_steps = len(v_dataloader)
 
         for step, batch in enumerate(iter(v_dataloader)):
+            batch = batch.to(device=self.device)
             visible_input = batch[:, :self.visible_length].unsqueeze(1)
             target_input = batch[:, -self.prediction_length:].unsqueeze(1)
             predictions = self.model(visible_input)
