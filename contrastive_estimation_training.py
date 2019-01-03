@@ -15,6 +15,7 @@ class ContrastiveEstimationTrainer:
         self.device = device
         self.regularization = regularization
         self.validation_set = validation_set
+        self.training_step = 0
 
     def train(self,
               batch_size=32,
@@ -31,7 +32,7 @@ class ContrastiveEstimationTrainer:
                                                  num_workers=num_workers,
                                                  pin_memory=True,
                                                  drop_last=True)
-        step = continue_training_at_step
+        self.training_step = continue_training_at_step
 
         for current_epoch in range(epochs):
             print("epoch", current_epoch)
@@ -57,7 +58,7 @@ class ContrastiveEstimationTrainer:
                 if torch.sum(torch.isnan(loss)).item() > 0.:
                     print("nan loss")
                     return
-                elif step % 20 == 0:
+                elif self.training_step % 20 == 0:
                     print("mean score:", torch.mean(scores).item())
 
                 loss += self.regularization * (1.648 - torch.mean(scores))**2  # regulate loss
@@ -66,13 +67,13 @@ class ContrastiveEstimationTrainer:
                 loss.backward()
                 optimizer.step()
 
-                step += 1
+                self.training_step += 1
                 if self.logger is not None:
-                    self.logger.log(step, loss.item())
-                elif step % 1 == 0:
-                    print("loss at step step " + str(step) + ":", loss.item())
+                    self.logger.log(self.training_step, loss.item())
+                elif self.training_step % 1 == 0:
+                    print("loss at step step " + str(self.training_step) + ":", loss.item())
 
-                if max_steps is not None and step >= max_steps:
+                if max_steps is not None and self.training_step >= max_steps:
                     return
 
     def validate(self, batch_size=64, num_workers=1, max_steps=None):
