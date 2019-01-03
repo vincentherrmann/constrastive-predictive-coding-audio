@@ -41,7 +41,7 @@ class ContrastiveEstimationTrainer:
                 batch = batch.to(device=self.device)
                 visible_input = batch[:, :self.visible_length].unsqueeze(1)
                 target_input = batch[:, -self.prediction_length:].unsqueeze(1)
-                predictions = self.model(visible_input) * 100.  # TODO delete factor
+                predictions = self.model(visible_input)  # TODO delete factor
                 targets = self.model.encoder(target_input).detach()  # TODO: should this really be detached? (Probably yes...)
 
                 targets = targets.permute(2, 1, 0)  # step, length, batch
@@ -49,7 +49,7 @@ class ContrastiveEstimationTrainer:
 
                 #scores = torch.sigmoid(torch.matmul(predictions, targets)).squeeze() # step, data_batch, target_batch
                 scores = torch.matmul(predictions, targets).squeeze()  # step, data_batch, target_batch
-                scores = F.softplus(scores)  #torch.exp(scores)
+                scores = F.softplus(scores)
                 score_sum = torch.sum(scores, dim=1)  # step, target_batch TODO: should this be detached?
                 valid_scores = torch.diagonal(scores, dim1=1, dim2=2)  # step, data_batch
                 loss_logits = torch.log(valid_scores / score_sum)  # step, batch
@@ -117,7 +117,7 @@ class ContrastiveEstimationTrainer:
             predictions = predictions.permute(1, 0, 2)  # step, batch, length
 
             scores = torch.matmul(predictions, targets).squeeze()  # step, data_batch, target_batch
-            scores = torch.exp(scores)
+            scores = F.softplus(scores)
             score_sum = torch.sum(scores, dim=1)  # step, target_batch
             valid_scores = torch.diagonal(scores, dim1=1, dim2=2)  # step, data_batch
             loss_logits = torch.log(valid_scores / score_sum)  # step, batch
