@@ -46,9 +46,9 @@ class ContrastiveEstimationTrainer:
                 targets = targets.permute(2, 1, 0)  # step, length, batch
                 predictions = predictions.permute(1, 0, 2)  # step, batch, length
 
-                #scores = torch.sigmoid(torch.matmul(predictions, targets)).squeeze() # step, data_batch, target_batch
-                scores = torch.matmul(predictions, targets).squeeze()  # step, data_batch, target_batch
-                scores = torch.exp(scores)
+                scores = torch.sigmoid(torch.matmul(predictions, targets)).squeeze() # step, data_batch, target_batch
+                #scores = torch.matmul(predictions, targets).squeeze()  # step, data_batch, target_batch
+                #scores = torch.exp(scores)
                 score_sum = torch.sum(scores, dim=1)#.detach()  # step, target_batch TODO: should this be detached?
                 valid_scores = torch.diagonal(scores, dim1=1, dim2=2)  # step, data_batch
                 loss_logits = torch.log(valid_scores / score_sum)  # step, batch
@@ -59,10 +59,10 @@ class ContrastiveEstimationTrainer:
                 if torch.sum(torch.isnan(loss)).item() > 0.:
                     print("nan loss")
                     return
-                #elif self.training_step % 20 == 0:
-                #    print("mean score:", torch.mean(scores).item())
+                elif self.training_step % 20 == 0:
+                    print("mean score:", torch.mean(scores).item())
 
-                loss += self.regularization * (1.648 - torch.mean(scores))**2  # regulate loss
+                #loss += self.regularization * (1.648 - torch.mean(scores))**2  # regulate loss
 
                 self.model.zero_grad()
                 loss.backward()
@@ -93,8 +93,9 @@ class ContrastiveEstimationTrainer:
 
         total_prediction_losses = torch.zeros(self.model.prediction_steps, requires_grad=False).to(device=self.device)
         total_accurate_predictions = torch.zeros(self.model.prediction_steps, requires_grad=False).to(device=self.device)
-        prediction_template = torch.range(0, batch_size - 1, dtype=torch.long).unsqueeze(0)
+        prediction_template = torch.arange(0, batch_size, dtype=torch.long).unsqueeze(0)
         prediction_template = prediction_template.repeat(self.model.prediction_steps, 1)
+        total_score = 0
 
         if max_steps is None:
             max_steps = len(v_dataloader)
@@ -109,7 +110,7 @@ class ContrastiveEstimationTrainer:
             targets = targets.permute(2, 1, 0)  # step, length, batch
             predictions = predictions.permute(1, 0, 2)  # step, batch, length
 
-            scores = torch.exp(torch.matmul(predictions, targets).squeeze())  # step, data_batch, target_batch
+            scores = torch.sigmoid(torch.matmul(predictions, targets)).squeeze()  # step, data_batch, target_batch
             score_sum = torch.sum(scores, dim=1)  # step, target_batch
             valid_scores = torch.diagonal(scores, dim1=1, dim2=2)  # step, data_batch
             loss_logits = torch.log(valid_scores / score_sum)  # step, batch
@@ -124,12 +125,14 @@ class ContrastiveEstimationTrainer:
 
             total_prediction_losses += prediction_losses.detach()
             total_accurate_predictions += prediction_accuracy.detach()
+            total_score += torch.mean(scores).item()
 
             if step+1 >= max_steps:
                 break
 
         total_prediction_losses /= max_steps
         total_accurate_predictions /= max_steps
+        total_score /= max_steps
 
         self.model.train()
-        return total_prediction_losses, total_accurate_predictions
+        return total_prediction_losses, total_accurate_predictions, total_score
