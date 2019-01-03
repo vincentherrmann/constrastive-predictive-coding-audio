@@ -6,7 +6,7 @@ from audio_model import *
 
 class ContrastiveEstimationTrainer:
     def __init__(self, model: AudioPredictiveCodingModel, dataset, visible_length, prediction_length, logger=None, device=None,
-                 regularization=10., validation_set=None):
+                 regularization=1., validation_set=None):
         self.model = model
         self.visible_length = visible_length
         self.prediction_length = prediction_length
@@ -46,23 +46,23 @@ class ContrastiveEstimationTrainer:
                 targets = targets.permute(2, 1, 0)  # step, length, batch
                 predictions = predictions.permute(1, 0, 2)  # step, batch, length
 
-                scores = torch.sigmoid(torch.matmul(predictions, targets)).squeeze() # step, data_batch, target_batch
-                #scores = torch.matmul(predictions, targets).squeeze()  # step, data_batch, target_batch
-                #scores = torch.exp(scores)
+                #scores = torch.sigmoid(torch.matmul(predictions, targets)).squeeze() # step, data_batch, target_batch
+                scores = torch.matmul(predictions, targets).squeeze()  # step, data_batch, target_batch
+                scores = torch.exp(scores)
                 score_sum = torch.sum(scores, dim=1)#.detach()  # step, target_batch TODO: should this be detached?
                 valid_scores = torch.diagonal(scores, dim1=1, dim2=2)  # step, data_batch
                 loss_logits = torch.log(valid_scores / score_sum)  # step, batch
 
-                prediction_losses = -torch.sum(loss_logits, dim=1)
+                prediction_losses = -torch.mean(loss_logits, dim=1)
                 loss = torch.mean(prediction_losses)
 
                 if torch.sum(torch.isnan(loss)).item() > 0.:
                     print("nan loss")
                     return
-                elif self.training_step % 20 == 0:
-                    print("mean score:", torch.mean(scores).item())
+                #elif self.training_step % 20 == 0:
+                #    print("mean score:", torch.mean(scores).item())
 
-                loss += self.regularization * (0.5 - torch.mean(scores))**2  # regulate loss
+                loss += self.regularization * (1-torch.mean(scores))**2  # regulate loss
 
                 self.model.zero_grad()
                 loss.backward()
@@ -110,7 +110,8 @@ class ContrastiveEstimationTrainer:
             targets = targets.permute(2, 1, 0)  # step, length, batch
             predictions = predictions.permute(1, 0, 2)  # step, batch, length
 
-            scores = torch.sigmoid(torch.matmul(predictions, targets)).squeeze()  # step, data_batch, target_batch
+            scores = torch.matmul(predictions, targets).squeeze()  # step, data_batch, target_batch
+            scores = torch.exp(scores)
             score_sum = torch.sum(scores, dim=1)  # step, target_batch
             valid_scores = torch.diagonal(scores, dim1=1, dim2=2)  # step, data_batch
             loss_logits = torch.log(valid_scores / score_sum)  # step, batch
@@ -120,8 +121,10 @@ class ContrastiveEstimationTrainer:
             correctly_predicted = torch.eq(prediction_template.type_as(max_score_indices), max_score_indices)
             prediction_accuracy = torch.sum(correctly_predicted, dim=1).type_as(visible_input) / batch_size
 
-            prediction_losses = -torch.sum(loss_logits, dim=1)
+            prediction_losses = -torch.mean(loss_logits, dim=1)
             loss = torch.mean(prediction_losses)
+
+            loss += self.regularization * (1 - torch.mean(scores)) ** 2  # regulate loss
 
             total_prediction_losses += prediction_losses.detach()
             total_accurate_predictions += prediction_accuracy.detach()
