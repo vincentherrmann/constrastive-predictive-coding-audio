@@ -41,15 +41,15 @@ class ContrastiveEstimationTrainer:
                 batch = batch.to(device=self.device)
                 visible_input = batch[:, :self.visible_length].unsqueeze(1)
                 target_input = batch[:, -self.prediction_length:].unsqueeze(1)
-                predictions = self.model(visible_input)  * 20. # TODO delete factor
+                predictions = self.model(visible_input)  # TODO delete factor
                 targets = self.model.encoder(target_input).detach()  # TODO: should this really be detached? (Probably yes...)
 
                 targets = targets.permute(2, 1, 0)  # step, length, batch
                 predictions = predictions.permute(1, 0, 2)  # step, batch, length
 
                 #scores = torch.sigmoid(torch.matmul(predictions, targets)).squeeze() # step, data_batch, target_batch
-                scores = torch.matmul(predictions, targets).squeeze()  # step, data_batch, target_batch
-                scores = F.softplus(scores)
+                lin_scores = torch.matmul(predictions, targets).squeeze()  # step, data_batch, target_batch
+                scores = F.softplus(lin_scores)
                 score_sum = torch.sum(scores, dim=1)  # step, target_batch TODO: should this be detached?
                 valid_scores = torch.diagonal(scores, dim1=1, dim2=2)  # step, data_batch
                 loss_logits = torch.log(valid_scores / score_sum)  # step, batch
@@ -59,6 +59,12 @@ class ContrastiveEstimationTrainer:
 
                 if torch.sum(torch.isnan(loss)).item() > 0.:
                     print("nan loss")
+                    print("scores:", scores)
+                    print("mean target:", torch.mean(targets).item())
+                    print("mean prediction:", torch.mean(predictions).item())
+                    print("mean score:", torch.mean(scores).item())
+                    print("mean score sum:", torch.mean(score_sum).item())
+                    print("ratio:", torch.mean(score_sum).item() / torch.mean(scores).item())
                     return
                 elif self.training_step % 20 == 0:
                     print("mean target:", torch.mean(targets).item())
@@ -67,7 +73,7 @@ class ContrastiveEstimationTrainer:
                     print("mean score sum:", torch.mean(score_sum).item())
                     print("ratio:", torch.mean(score_sum).item() / torch.mean(scores).item())
 
-                loss += self.regularization * (1. - torch.mean(scores))**2  # regulate loss
+                loss += self.regularization * (torch.mean(lin_scores))**2  # regulate loss
                 loss = torch.clamp(loss, 0, 5)
 
                 self.model.zero_grad()
