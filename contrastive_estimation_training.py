@@ -17,6 +17,7 @@ class ContrastiveEstimationTrainer:
         self.regularization = regularization
         self.validation_set = validation_set
         self.training_step = 0
+        self.print_out_scores = False
 
     def train(self,
               batch_size=32,
@@ -66,7 +67,7 @@ class ContrastiveEstimationTrainer:
                     print("mean score sum:", torch.mean(score_sum).item())
                     print("ratio:", torch.mean(score_sum).item() / torch.mean(scores).item())
                     return
-                elif self.training_step % 20 == 0:
+                elif self.training_step % 20 == 0 and self.print_out_scores:
                     print("mean target:", torch.mean(targets).item())
                     print("mean prediction:", torch.mean(predictions).item())
                     print("mean score:", torch.mean(scores).item())
