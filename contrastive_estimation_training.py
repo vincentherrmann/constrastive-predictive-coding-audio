@@ -112,6 +112,8 @@ class ContrastiveEstimationTrainer:
 
         if max_steps is None:
             max_steps = len(v_dataloader)
+        elif max_steps > len(v_dataloader):
+            max_steps = len(v_dataloader)
 
         for step, batch in enumerate(iter(v_dataloader)):
             batch = batch.to(device=self.device)
