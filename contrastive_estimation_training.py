@@ -125,8 +125,8 @@ class ContrastiveEstimationTrainer:
             targets = targets.permute(2, 1, 0)  # step, length, batch
             predictions = predictions.permute(1, 0, 2)  # step, batch, length
 
-            scores = torch.matmul(predictions, targets).squeeze()  # step, data_batch, target_batch
-            scores = F.softplus(scores)
+            lin_scores = torch.matmul(predictions, targets).squeeze()  # step, data_batch, target_batch
+            scores = F.softplus(lin_scores)
             score_sum = torch.sum(scores, dim=1)  # step, target_batch
             valid_scores = torch.diagonal(scores, dim1=1, dim2=2)  # step, data_batch
             loss_logits = torch.log(valid_scores / score_sum)  # step, batch

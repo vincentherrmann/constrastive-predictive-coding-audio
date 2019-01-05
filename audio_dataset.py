@@ -12,6 +12,7 @@ class AudioDataset(torch.utils.data.Dataset):
     def __init__(self,
                  location,
                  item_length,
+                 unique_length=None,
                  sampling_rate=16000,
                  mono=True,
                  dtype=torch.FloatTensor):
@@ -20,6 +21,7 @@ class AudioDataset(torch.utils.data.Dataset):
         self.sampling_rate = sampling_rate
         self.mono = mono
         self._item_length = item_length
+        self._unique_length = item_length if unique_length is None else unique_length
         self._length = 0
         self.start_samples = [0]
         self.dtype = dtype
@@ -35,6 +37,15 @@ class AudioDataset(torch.utils.data.Dataset):
     @item_length.setter
     def item_length(self, value):
         self._item_length = value
+        self.calculate_length()
+
+    @property
+    def unique_length(self):
+        return self._unique_length
+
+    @unique_length.setter
+    def unique_length(self, value):
+        self._unique_length = value
         self.calculate_length()
 
     def load_file(self, file, frames=-1, start=0):
@@ -59,8 +70,8 @@ class AudioDataset(torch.utils.data.Dataset):
         for idx in range(len(self.files)):
             file_data = self.load_file(str(self.files[idx]))
             start_samples.append(start_samples[-1] + file_data.shape[0])
-        available_length = start_samples[-1] - self.item_length - 1
-        self._length = math.floor(available_length / self.item_length)
+        available_length = start_samples[-1] - (self.item_length - self.unique_length)
+        self._length = math.floor(available_length / self.unique_length)
         self.start_samples = start_samples
 
     def load_sample(self, file_index, position_in_file, item_length):
@@ -84,7 +95,7 @@ class AudioDataset(torch.utils.data.Dataset):
         """
         Calculate the file and the position in the file from the global dataset index
         """
-        sample_index = idx * self._item_length
+        sample_index = idx * self.unique_length
 
         file_index = bisect.bisect_left(self.start_samples, sample_index) - 1
         if file_index < 0:
