@@ -2,11 +2,13 @@ import torch
 import torch.nn.functional as F
 import torch.optim
 import torch.utils.data
+import random
 from audio_model import *
 
 
 class ContrastiveEstimationTrainer:
     def __init__(self, model: AudioPredictiveCodingModel, dataset, visible_length, prediction_length, logger=None, device=None,
+                 use_all_GPUs=True,
                  regularization=1., validation_set=None):
         self.model = model
         self.visible_length = visible_length
@@ -14,6 +16,8 @@ class ContrastiveEstimationTrainer:
         self.dataset = dataset
         self.logger = logger
         self.device = device
+        if torch.cuda.device_count() > 1 and use_all_GPUs:
+            self.model = torch.nn.DataParallel(model).cuda()
         self.regularization = regularization
         self.validation_set = validation_set
         self.training_step = 0
@@ -98,11 +102,11 @@ class ContrastiveEstimationTrainer:
         total_loss = 0
 
         v_dataloader = torch.utils.data.DataLoader(self.validation_set,
-                                                 batch_size=batch_size,
-                                                 shuffle=False,
-                                                 num_workers=num_workers,
-                                                 pin_memory=True,
-                                                 drop_last=True)
+                                                   batch_size=batch_size,
+                                                   sampler=DeterministicSampler(self.validation_set),
+                                                   num_workers=num_workers,
+                                                   pin_memory=True,
+                                                   drop_last=True)
 
         total_prediction_losses = torch.zeros(self.model.prediction_steps, requires_grad=False).to(device=self.device)
         total_accurate_predictions = torch.zeros(self.model.prediction_steps, requires_grad=False).to(device=self.device)
@@ -154,3 +158,25 @@ class ContrastiveEstimationTrainer:
 
         self.model.train()
         return total_prediction_losses, total_accurate_predictions, total_score
+
+
+class DeterministicSampler(torch.utils.data.Sampler):
+    """Samples elements pseudo-randomly, always in the same order.
+
+    Arguments:
+        data_source (Dataset): dataset to sample from
+    """
+
+    def __init__(self, data_source, seed=0):
+        self.data_source = data_source
+        self.seed = seed
+
+    def __iter__(self):
+        o = list(range(len(self.data_source)))
+        random.seed(self.seed)
+        random.shuffle(o)
+        print(o[:100])
+        return iter(o)
+
+    def __len__(self):
+        return len(self.data_source)
