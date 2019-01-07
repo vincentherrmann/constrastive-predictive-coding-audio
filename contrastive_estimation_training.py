@@ -11,12 +11,15 @@ class ContrastiveEstimationTrainer:
                  use_all_GPUs=True,
                  regularization=1., validation_set=None):
         self.model = model
+        self.encoder = model.encoder
+        self.prediction_steps = self.model.prediction_steps
         self.visible_length = visible_length
         self.prediction_length = prediction_length
         self.dataset = dataset
         self.logger = logger
         self.device = device
         if torch.cuda.device_count() > 1 and use_all_GPUs:
+            print("using", torch.cuda.device_count(), "GPUs")
             self.model = torch.nn.DataParallel(model).cuda()
         self.regularization = regularization
         self.validation_set = validation_set
@@ -47,7 +50,7 @@ class ContrastiveEstimationTrainer:
                 visible_input = batch[:, :self.visible_length].unsqueeze(1)
                 target_input = batch[:, -self.prediction_length:].unsqueeze(1)
                 predictions = self.model(visible_input)  # TODO delete factor
-                targets = self.model.encoder(target_input).detach()  # TODO: should this really be detached? (Probably yes...)
+                targets = self.encoder(target_input).detach()  # TODO: should this really be detached? (Probably yes...)
 
                 targets = targets.permute(2, 1, 0)  # step, length, batch
                 predictions = predictions.permute(1, 0, 2)  # step, batch, length
@@ -108,8 +111,8 @@ class ContrastiveEstimationTrainer:
                                                    pin_memory=True,
                                                    drop_last=True)
 
-        total_prediction_losses = torch.zeros(self.model.prediction_steps, requires_grad=False).to(device=self.device)
-        total_accurate_predictions = torch.zeros(self.model.prediction_steps, requires_grad=False).to(device=self.device)
+        total_prediction_losses = torch.zeros(self.prediction_steps, requires_grad=False).to(device=self.device)
+        total_accurate_predictions = torch.zeros(self.prediction_steps, requires_grad=False).to(device=self.device)
         prediction_template = torch.arange(0, batch_size, dtype=torch.long).unsqueeze(0)
         prediction_template = prediction_template.repeat(self.model.prediction_steps, 1)
         total_score = 0
@@ -124,7 +127,7 @@ class ContrastiveEstimationTrainer:
             visible_input = batch[:, :self.visible_length].unsqueeze(1)
             target_input = batch[:, -self.prediction_length:].unsqueeze(1)
             predictions = self.model(visible_input)
-            targets = self.model.encoder(target_input).detach()
+            targets = self.encoder(target_input).detach()
 
             targets = targets.permute(2, 1, 0)  # step, length, batch
             predictions = predictions.permute(1, 0, 2)  # step, batch, length
