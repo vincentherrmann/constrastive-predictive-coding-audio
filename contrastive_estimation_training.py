@@ -20,7 +20,7 @@ class ContrastiveEstimationTrainer:
         self.device = device
         if torch.cuda.device_count() > 1 and use_all_GPUs:
             print("using", torch.cuda.device_count(), "GPUs")
-            self.model = torch.nn.DataParallel(model).cuda()
+        self.model = torch.nn.DataParallel(model).cuda()
         self.regularization = regularization
         self.validation_set = validation_set
         self.training_step = 0
@@ -114,7 +114,7 @@ class ContrastiveEstimationTrainer:
         total_prediction_losses = torch.zeros(self.prediction_steps, requires_grad=False).to(device=self.device)
         total_accurate_predictions = torch.zeros(self.prediction_steps, requires_grad=False).to(device=self.device)
         prediction_template = torch.arange(0, batch_size, dtype=torch.long).unsqueeze(0)
-        prediction_template = prediction_template.repeat(self.model.prediction_steps, 1)
+        prediction_template = prediction_template.repeat(self.prediction_steps, 1)
         total_score = 0
 
         if max_steps is None:
