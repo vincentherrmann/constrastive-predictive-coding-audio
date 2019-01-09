@@ -90,7 +90,9 @@ class ContrastiveEstimationTrainer:
 
                 self.training_step += 1
                 if self.logger is not None:
-                    self.logger.log(self.training_step, loss.item())
+                    self.logger.loss_meter.update(loss.item())
+                    self.logger.score_meter.update(torch.max(scores).item())
+                    self.logger.log(self.training_step)
                 elif self.training_step % 1 == 0:
                     print("loss at step step " + str(self.training_step) + ":", loss.item())
 
@@ -178,7 +180,7 @@ class DeterministicSampler(torch.utils.data.Sampler):
         o = list(range(len(self.data_source)))
         random.seed(self.seed)
         random.shuffle(o)
-        print(o[:100])
+        #print(o[:100])
         return iter(o)
 
     def __len__(self):
