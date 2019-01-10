@@ -84,14 +84,14 @@ class AudioPredictiveCodingModel(nn.Module):
         self.encoder = encoder
         self.autoregressive_model = autoregressive_model
         self.prediction_model = nn.Linear(in_features=ar_size, out_features=enc_size*prediction_steps, bias=False)
-        self.group_norm = nn.GroupNorm(num_groups=prediction_steps, num_channels=enc_size*prediction_steps, affine=False)
+        #self.group_norm = nn.GroupNorm(num_groups=prediction_steps, num_channels=enc_size*prediction_steps, affine=False)
 
     def forward(self, x):
         z = self.encoder(x)
         targets = z[:, :, -self.prediction_steps:].detach()
         z = z[:, :, :-self.prediction_steps]
         c = self.autoregressive_model(z)
-        predicted_z = self.group_norm(self.prediction_model(c))  # batch, step*enc_size
+        predicted_z = self.prediction_model(c)  # batch, step*enc_size
         return predicted_z.view(x.shape[0], self.prediction_steps, self.enc_size), targets
 
     def parameter_count(self):
