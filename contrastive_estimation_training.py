@@ -126,10 +126,7 @@ class ContrastiveEstimationTrainer:
 
         for step, batch in enumerate(iter(v_dataloader)):
             batch = batch.to(device=self.device)
-            visible_input = batch[:, :self.visible_length].unsqueeze(1)
-            target_input = batch[:, -self.prediction_length:].unsqueeze(1)
-            predictions = self.model(visible_input)
-            targets = self.encoder(target_input).detach()
+            predictions, targets = self.model(batch.unsqueeze(1))
 
             targets = targets.permute(2, 1, 0)  # step, length, batch
             predictions = predictions.permute(1, 0, 2)  # step, batch, length
