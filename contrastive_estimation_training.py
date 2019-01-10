@@ -20,7 +20,7 @@ class ContrastiveEstimationTrainer:
         self.device = device
         if torch.cuda.device_count() > 1 and use_all_GPUs:
             print("using", torch.cuda.device_count(), "GPUs")
-        self.model = torch.nn.DataParallel(model).cuda()
+            self.model = torch.nn.DataParallel(model).cuda()
         self.regularization = regularization
         self.validation_set = validation_set
         self.training_step = 0
@@ -47,10 +47,10 @@ class ContrastiveEstimationTrainer:
             print("epoch", current_epoch)
             for batch in iter(dataloader):
                 batch = batch.to(device=self.device)
-                visible_input = batch[:, :self.visible_length].unsqueeze(1)
-                target_input = batch[:, -self.prediction_length:].unsqueeze(1)
-                predictions = self.model(visible_input)  # TODO delete factor
-                targets = self.encoder(target_input).detach()  # TODO: should this really be detached? (Probably yes...)
+                #visible_input = batch[:, :self.visible_length].unsqueeze(1)
+                #target_input = batch[:, -self.prediction_length:].unsqueeze(1)
+                predictions, targets = self.model(batch.unsqueeze(1))
+                #targets = self.encoder(target_input).detach()  # TODO: should this really be detached? (Probably yes...)
 
                 targets = targets.permute(2, 1, 0)  # step, length, batch
                 predictions = predictions.permute(1, 0, 2)  # step, batch, length
@@ -81,8 +81,8 @@ class ContrastiveEstimationTrainer:
                     print("mean score sum:", torch.mean(score_sum).item())
                     print("ratio:", torch.mean(score_sum).item() / torch.mean(scores).item())
 
-                loss += self.regularization * (torch.mean(lin_scores))**2  # regulate loss
-                loss = torch.clamp(loss, 0, 5)
+                #loss += self.regularization * (torch.mean(lin_scores))**2  # regulate loss
+                #loss = torch.clamp(loss, 0, 5)
 
                 self.model.zero_grad()
                 loss.backward()
