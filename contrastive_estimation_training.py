@@ -140,7 +140,7 @@ class ContrastiveEstimationTrainer:
             # calculate prediction accuracy as the proportion of scores that are highest for the correct target
             max_score_indices = torch.argmax(scores, dim=1)
             correctly_predicted = torch.eq(prediction_template.type_as(max_score_indices), max_score_indices)
-            prediction_accuracy = torch.sum(correctly_predicted, dim=1).type_as(visible_input) / batch_size
+            prediction_accuracy = torch.sum(correctly_predicted, dim=1).type_as(batch) / batch_size
 
             prediction_losses = -torch.mean(loss_logits, dim=1)
             loss = torch.mean(prediction_losses)
