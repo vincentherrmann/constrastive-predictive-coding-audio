@@ -14,14 +14,14 @@ class PositionalEncoder(nn.Module):
         # pos and i
 
         pe = torch.zeros([max_seq_len, code_size], requires_grad=False)
-        if torch.cuda.is_available():
-            pe = torch.zeros([max_seq_len, code_size], requires_grad=False).cuda()
+        #if torch.cuda.is_available():  # TODO: eliminate cuda check
+        #    pe = torch.zeros([max_seq_len, code_size], requires_grad=False).cuda()
         for pos in range(max_seq_len):
             for i in range(0, code_size, 2):
                 pe[pos, i] = math.sin(pos / (10000 ** ((2 * i) / code_size)))
                 pe[pos, i + 1] = math.cos(pos / (10000 ** ((2 * (i + 1)) / code_size)))
 
-        self.pe = pe.unsqueeze(0)
+        self.register_buffer('pe', pe.unsqueeze(0))
 
     def forward(self, x):
         # make code relatively larger
