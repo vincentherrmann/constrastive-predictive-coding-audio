@@ -1,5 +1,6 @@
 from unittest import TestCase
 from audio_model import *
+from attention_model import *
 from contrastive_estimation_training import *
 
 import sys
@@ -18,14 +19,16 @@ class TestContrastiveEstimationTrainer(TestCase):
                                      'kernel_sizes': [10, 8, 4, 4, 4],
                                      'channel_count': [32, 32, 32, 32, 32],
                                      'bias': True})
-        self.ar_model = AudioGRUModel(input_size=32, hidden_size=48)
+        #self.ar_model = AudioGRUModel(input_size=32, hidden_size=48)
+        self.ar_model = AttentionModel(channels=32, output_size=48, num_layers=2, seq_length=64)
         self.pc_model = AudioPredictiveCodingModel(encoder=self.encoder,
                                                    autoregressive_model=self.ar_model,
                                                    enc_size=32,
                                                    ar_size=48,
                                                    prediction_steps=12)
-        self.dataset = AudioDataset(location='/Volumes/Elements/Datasets/MelodicProgressiveHouse_Tracks_test',
-                                    item_length=20480)
+        item_length = self.encoder.receptive_field + (64 + 12 - 1) * self.encoder.downsampling_factor
+        self.dataset = AudioDataset(location='/Users/vincentherrmann/Documents/Projekte/Immersions/MelodicProgressiveHouse_Tracks_test',
+                                    item_length=item_length)
 
     def test_contrastiveEstimationTraining(self):
         visible_steps = 64
@@ -38,7 +41,7 @@ class TestContrastiveEstimationTrainer(TestCase):
                                                     visible_length=visible_length,
                                                     prediction_length=prediction_length)
         tic = time.time()
-        self.trainer.train(batch_size=16, max_steps=10, num_workers=4)
+        self.trainer.train(batch_size=32, max_steps=1000, num_workers=4, lr=1e-3)
         toc = time.time()
 
         time_per_minibatch = (toc - tic) / 10

@@ -2,6 +2,7 @@ from unittest import TestCase
 from audio_dataset import *
 
 import time
+import torchaudio
 
 
 class TestAudioDataset(TestCase):
@@ -17,16 +18,29 @@ class TestAudioDataset(TestCase):
         sample = dataset[530]
         assert sample.shape[0] == 500
 
+    def test_dataset_with_unique_length(self):
+        dataset = AudioDataset(location='/Users/vincentherrmann/Documents/Projekte/Immersions/audio_clips/dataset',
+                               item_length=500,
+                               unique_length=267)
+        print("dataset has length", len(dataset))
+        assert len(dataset) == 996
+
+        sample = dataset[0]
+        assert sample.shape[0] == 500
+
+        sample = dataset[995]
+        assert sample.shape[0] == 500
+
     def test_minibatch_performance(self):
         dataset = AudioDataset(location='/Users/vincentherrmann/Documents/Projekte/Immersions/MelodicProgressiveHouse_Tracks_test',
-                               item_length=20480)
+                               item_length=12465)
 
-        num_workers = 4
+        num_workers = 2
         num_batches = 100
 
         dataloader = torch.utils.data.DataLoader(dataset=dataset,
                                                  batch_size=32,
-                                                 shuffle=True,
+                                                 shuffle=False,
                                                  num_workers=num_workers)
         dataloader_iter = iter(dataloader)
 
@@ -50,3 +64,13 @@ class TestAudioDataset(TestCase):
         # time per minibatch: 0.33037535190582273 s with 4 workers
         # time per minibatch: 1.2090770196914673 s with 1 workers
         # time per minibatch: 0.3904983305931091 s with 16 workers
+
+        # using torchaudio:
+        # time per minibatch: 0.003301420211791992 s with 4 workers
+        # one external storage:
+        # time per minibatch: 0.01412742853164673 s with 4 workers
+
+        # using large files:
+        # time per minibatch: 0.04821853160858154 s with 2 workers
+        # time per minibatch: 0.046169569492340086 s with 4 workers
+        # time per minibatch: 0.07003917932510376 s with 16 workers
