@@ -142,7 +142,8 @@ class AudioTestingDataset(AudioDataset):
                  unique_length=None,
                  sampling_rate=16000,
                  mono=True,
-                 dtype=torch.FloatTensor):
+                 dtype=torch.FloatTensor,
+                 max_file_count=None):
 
         super().__init__(location=location,
                          item_length=item_length,
@@ -151,6 +152,11 @@ class AudioTestingDataset(AudioDataset):
                          mono=mono,
                          dtype=dtype)
 
+        if max_file_count is None:
+            self.max_file_count = len(self.files)
+        else:
+            self.max_file_count = max_file_count
+
     def calculate_length(self):
         """
         Calculate the number of items in this data sets.
@@ -158,7 +164,7 @@ class AudioTestingDataset(AudioDataset):
         Omit last sample in each file to make sure that there are no file-crossing samples.
         """
         start_samples = [0]
-        for idx in range(len(self.files)):
+        for idx in range(self.max_file_count):
             file_data = self.load_file(str(self.files[idx]))
             start_samples.append(start_samples[-1] + file_data.shape[0] - self.item_length)
         available_length = start_samples[-1] - (self.item_length - self.unique_length)
