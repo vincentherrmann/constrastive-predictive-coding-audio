@@ -185,7 +185,7 @@ class ContrastiveEstimationTrainer:
             z = self.model.encoder(batch.unsqueeze(1))
             c = self.model.autoregressive_model(z)
             task_data[step*batch_size:(step+1)*batch_size, :] = c.detach().cpu()
-            task_labels[step*batch_size:(step+1)*batch_size] = labels.detach
+            task_labels[step*batch_size:(step+1)*batch_size] = labels.detach()
 
 
         task_data = task_data.detach().numpy()
