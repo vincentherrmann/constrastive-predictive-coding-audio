@@ -92,7 +92,7 @@ class AudioPredictiveCodingModel(nn.Module):
         z = z[:, :, :-self.prediction_steps]
         c = self.autoregressive_model(z)
         predicted_z = self.prediction_model(c)  # batch, step*enc_size
-        return predicted_z.view(x.shape[0], self.prediction_steps, self.enc_size), targets
+        return predicted_z.view(x.shape[0], self.prediction_steps, self.enc_size), targets, z, c
 
     def parameter_count(self):
         total_parameters = 0
