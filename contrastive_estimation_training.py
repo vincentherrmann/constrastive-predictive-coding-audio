@@ -173,6 +173,8 @@ class ContrastiveEstimationTrainer:
         # calculate data for test task
         task_data = torch.FloatTensor(num_items, self.model.ar_size)
         task_labels = torch.LongTensor(num_items)
+        task_data.needs_grad = False
+        task_labels.needs_grad = False
         t_dataloader = torch.utils.data.DataLoader(self.test_task_set,
                                                    batch_size=batch_size,
                                                    num_workers=num_workers,
@@ -182,8 +184,8 @@ class ContrastiveEstimationTrainer:
             batch = batch.to(device=self.device)
             z = self.model.encoder(batch.unsqueeze(1))
             c = self.model.autoregressive_model(z)
-            task_data[step*batch_size:(step+1)*batch_size, :] = c.cpu()
-            task_labels[step*batch_size:(step+1)*batch_size] = labels
+            task_data[step*batch_size:(step+1)*batch_size, :] = c.detach().cpu()
+            task_labels[step*batch_size:(step+1)*batch_size] = labels.detach
 
 
         task_data = task_data.detach().numpy()
