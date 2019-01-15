@@ -15,7 +15,8 @@ class AudioDataset(torch.utils.data.Dataset):
                  unique_length=None,
                  sampling_rate=16000,
                  mono=True,
-                 dtype=torch.FloatTensor):
+                 dtype=torch.FloatTensor,
+                 max_file_count=None):
         super().__init__()
         self.location = Path(location)
         self.sampling_rate = sampling_rate
@@ -28,6 +29,10 @@ class AudioDataset(torch.utils.data.Dataset):
         self.dummy_load = False
 
         self.files = list_all_audio_files(self.location, allowed_types=['.wav'])
+        if max_file_count is None:
+            self.max_file_count = len(self.files)
+        else:
+            self.max_file_count = max_file_count
         self.calculate_length()
 
     @property
@@ -67,7 +72,7 @@ class AudioDataset(torch.utils.data.Dataset):
         Additionally the start positions of each file are calculate in this method.
         """
         start_samples = [0]
-        for idx in range(len(self.files)):
+        for idx in range(self.max_file_count):
             file_data = self.load_file(str(self.files[idx]))
             start_samples.append(start_samples[-1] + file_data.shape[0])
         available_length = start_samples[-1] - (self.item_length - self.unique_length)
@@ -150,12 +155,8 @@ class AudioTestingDataset(AudioDataset):
                          unique_length=unique_length,
                          sampling_rate=sampling_rate,
                          mono=mono,
-                         dtype=dtype)
-
-        if max_file_count is None:
-            self.max_file_count = len(self.files)
-        else:
-            self.max_file_count = max_file_count
+                         dtype=dtype,
+                         max_file_count=max_file_count)
 
     def calculate_length(self):
         """
