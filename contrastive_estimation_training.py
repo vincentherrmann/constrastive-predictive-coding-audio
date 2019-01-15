@@ -13,6 +13,7 @@ class ContrastiveEstimationTrainer:
                  regularization=1., validation_set=None, test_task_set=None):
         self.model = model
         self.encoder = model.encoder
+        self.ar_size = model.ar_size
         self.prediction_steps = self.model.prediction_steps
         self.visible_length = visible_length
         self.prediction_length = prediction_length
@@ -171,7 +172,7 @@ class ContrastiveEstimationTrainer:
         self.model.eval()
 
         # calculate data for test task
-        task_data = torch.FloatTensor(num_items, self.model.ar_size)
+        task_data = torch.FloatTensor(num_items, self.ar_size)
         task_labels = torch.LongTensor(num_items)
         task_data.needs_grad = False
         task_labels.needs_grad = False
