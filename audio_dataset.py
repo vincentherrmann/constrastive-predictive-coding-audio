@@ -16,7 +16,7 @@ class AudioDataset(torch.utils.data.Dataset):
                  sampling_rate=16000,
                  mono=True,
                  dtype=torch.FloatTensor):
-
+        super().__init__()
         self.location = Path(location)
         self.sampling_rate = sampling_rate
         self.mono = mono
@@ -133,6 +133,47 @@ class AudioDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return self._length
+
+
+class AudioTestingDataset(AudioDataset):
+    def __init__(self,
+                 location,
+                 item_length,
+                 unique_length=None,
+                 sampling_rate=16000,
+                 mono=True,
+                 dtype=torch.FloatTensor):
+
+        super().__init__(location=location,
+                         item_length=item_length,
+                         unique_length=unique_length,
+                         sampling_rate=sampling_rate,
+                         mono=mono,
+                         dtype=dtype)
+
+    def calculate_length(self):
+        """
+        Calculate the number of items in this data sets.
+        Additionally the start positions of each file are calculate in this method.
+        Omit last sample in each file to make sure that there are no file-crossing samples.
+        """
+        start_samples = [0]
+        for idx in range(len(self.files)):
+            file_data = self.load_file(str(self.files[idx]))
+            start_samples.append(start_samples[-1] + file_data.shape[0] - self.item_length)
+        available_length = start_samples[-1] - (self.item_length - self.unique_length)
+        self._length = math.floor(available_length / self.unique_length)
+        self.start_samples = start_samples
+
+    def __getitem__(self, idx):
+        if self.dummy_load:
+            sample = np.random.randn(self._item_length)
+        else:
+            file_index, position_in_file = self.get_position(idx)
+            sample = self.load_sample(file_index, position_in_file, self._item_length)
+
+        example = sample[:self._item_length], torch.LongTensor([file_index]).squeeze()
+        return example
 
 
 def list_all_audio_files(location, allowed_types=[".mp3", ".wav", ".aif", "aiff", ".flac"]):

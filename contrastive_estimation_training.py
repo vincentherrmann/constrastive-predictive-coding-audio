@@ -4,12 +4,13 @@ import torch.optim
 import torch.utils.data
 import random
 from audio_model import *
+from sklearn import svm
 
 
 class ContrastiveEstimationTrainer:
     def __init__(self, model: AudioPredictiveCodingModel, dataset, visible_length, prediction_length, logger=None, device=None,
                  use_all_GPUs=True,
-                 regularization=1., validation_set=None):
+                 regularization=1., validation_set=None, test_task_set=None):
         self.model = model
         self.encoder = model.encoder
         self.prediction_steps = self.model.prediction_steps
@@ -23,6 +24,7 @@ class ContrastiveEstimationTrainer:
             self.model = torch.nn.DataParallel(model).cuda()
         self.regularization = regularization
         self.validation_set = validation_set
+        self.test_task_set = test_task_set
         self.training_step = 0
         self.print_out_scores = False
 
@@ -160,6 +162,46 @@ class ContrastiveEstimationTrainer:
 
         self.model.train()
         return total_prediction_losses, total_accurate_predictions, total_score
+
+    def test_task(self, batch_size=64, num_workers=1, evaluation_ratio=0.2):
+        if self.test_task_set is None:
+            print("No test task set")
+        num_items = len(self.test_task_set)
+
+        self.model.eval()
+
+        # calculate data for test task
+        task_data = torch.FloatTensor(num_items, self.model.ar_size)
+        task_labels = torch.LongTensor(num_items)
+        t_dataloader = torch.utils.data.DataLoader(self.test_task_set,
+                                                   batch_size=batch_size,
+                                                   num_workers=num_workers,
+                                                   pin_memory=True)
+        for step, (batch, labels) in enumerate(iter(t_dataloader)):
+            batch = batch.to(device=self.device)
+            z = self.model.encoder(batch.unsqueeze(1))
+            c = self.model.autoregressive_model(z)
+            task_data[step*batch_size:(step+1)*batch_size, :] = c.cpu()
+            task_labels[step*batch_size:(step+1)*batch_size] = labels
+
+
+        task_data = task_data.detach().numpy()
+        task_labels = task_labels.detach().numpy()
+
+        index_list = list(range(num_items))
+        random.seed(0)
+        random.shuffle(index_list)
+        train_indices = index_list[int(num_items*evaluation_ratio):]
+        eval_indices = index_list[:int(num_items*evaluation_ratio)]
+
+        classifier = svm.SVC(kernel='rbf')
+        classifier.fit(task_data[train_indices], task_labels[train_indices])
+        predictions = classifier.predict(task_data[eval_indices])
+        correct_predictions = np.equal(predictions, task_labels[eval_indices])
+
+        prediction_accuracy = np.sum(correct_predictions) / len(eval_indices)
+        self.model.train()
+        return prediction_accuracy
 
 
 class DeterministicSampler(torch.utils.data.Sampler):
