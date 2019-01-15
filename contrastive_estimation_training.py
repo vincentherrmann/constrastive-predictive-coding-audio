@@ -178,6 +178,7 @@ class ContrastiveEstimationTrainer:
                                                    num_workers=num_workers,
                                                    pin_memory=True)
         for step, (batch, labels) in enumerate(iter(t_dataloader)):
+            print("step", step)
             batch = batch.to(device=self.device)
             z = self.model.encoder(batch.unsqueeze(1))
             c = self.model.autoregressive_model(z)
