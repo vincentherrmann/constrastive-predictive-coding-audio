@@ -69,6 +69,8 @@ class ScalogramEncoder(nn.Module):
             s *= args_dict['pooling'][i - 1]
             self.receptive_field += (args_dict['kernel_sizes'][i][1] - 1) * s
 
+        self.downsampling_factor = args_dict['hop_length'] * np.prod(args_dict['pooling'])
+
     def forward(self, x):
         x = self.cqt(x)
         x = abs(x).unsqueeze(1)
