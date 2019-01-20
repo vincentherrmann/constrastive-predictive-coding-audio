@@ -73,17 +73,10 @@ class ScalogramEncoder(nn.Module):
         self.downsampling_factor = args_dict['hop_length'] * np.prod(args_dict['pooling'])
 
     def forward(self, x):
-        tic = time.time()
         x = self.cqt(x)
-        toc = time.time()
-        print("cqt time:", toc-tic)
         x = abs(x).unsqueeze(1)
         for i, module in enumerate(self.module_list):
-            tic = time.time()
             x = module(x)
-            toc = time.time()
-            print(module)
-            print("layer", i, "time:", toc - tic)
             #print("shape after module", i, " - ", x.shape)
         return x.squeeze(2)
 
