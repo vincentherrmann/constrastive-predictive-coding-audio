@@ -63,6 +63,12 @@ class ScalogramEncoder(nn.Module):
                 self.module_list.add_module('relu_' + str(l),
                                             nn.ReLU())
 
+        self.receptive_field = self.cqt.conv_kernel_sizes[0]
+        s = 1
+        for i in range(1, self.num_layers):
+            s *= args_dict['pooling'][i - 1]
+            self.receptive_field += (args_dict['kernel_sizes'][i][1] - 1) * s
+
     def forward(self, x):
         x = self.cqt(x)
         x = abs(x).unsqueeze(1)
