@@ -8,7 +8,7 @@ from constant_q_transform import *
 
 scalogram_encoder_default_dict = {'kernel_sizes': [(127, 1), (5, 5), (63, 1), (5, 5), (26, 1), (5, 5)],
                                   'top_padding': [126, 0, 0, 0, 0, 0],
-                                  'channel_count': [1, 128, 128, 256, 256, 512, 512],
+                                  'channel_count': [1, 64, 64, 128, 256, 512, 512],
                                   'pooling': [1, 2, 1, 2, 1, 1],
                                   'bias': True,
                                   'sample_rate': 16000,
