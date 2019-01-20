@@ -2,20 +2,21 @@ import torch
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
+import time
 
 from constant_q_transform import *
 
 
 scalogram_encoder_default_dict = {'kernel_sizes': [(127, 1), (5, 5), (63, 1), (5, 5), (26, 1), (5, 5)],
                                   'top_padding': [126, 0, 0, 0, 0, 0],
-                                  'channel_count': [1, 64, 64, 128, 256, 512, 512],
+                                  'channel_count': [1, 32, 32, 64, 128, 256, 512],
                                   'pooling': [1, 2, 1, 2, 1, 1],
                                   'bias': True,
                                   'sample_rate': 16000,
                                   'fmin': 30,
                                   'n_bins': 256,
                                   'bins_per_octave': 32,
-                                  'filter_scale': 1.,
+                                  'filter_scale': 0.5,
                                   'hop_length': 128,
                                   'trainable_cqt': False}
 
@@ -72,10 +73,17 @@ class ScalogramEncoder(nn.Module):
         self.downsampling_factor = args_dict['hop_length'] * np.prod(args_dict['pooling'])
 
     def forward(self, x):
+        tic = time.time()
         x = self.cqt(x)
+        toc = time.time()
+        print("cqt time:", toc-tic)
         x = abs(x).unsqueeze(1)
         for i, module in enumerate(self.module_list):
+            tic = time.time()
             x = module(x)
+            toc = time.time()
+            print(module)
+            print("layer", i, "time:", toc - tic)
             #print("shape after module", i, " - ", x.shape)
         return x.squeeze(2)
 
