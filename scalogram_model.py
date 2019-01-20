@@ -64,7 +64,7 @@ class ScalogramEncoder(nn.Module):
                                             nn.ReLU())
 
         self.receptive_field = self.cqt.conv_kernel_sizes[0]
-        s = 1
+        s = args_dict['hop_length']
         for i in range(1, self.num_layers):
             s *= args_dict['pooling'][i - 1]
             self.receptive_field += (args_dict['kernel_sizes'][i][1] - 1) * s
@@ -76,6 +76,6 @@ class ScalogramEncoder(nn.Module):
         x = abs(x).unsqueeze(1)
         for i, module in enumerate(self.module_list):
             x = module(x)
-            #print("shape after module", i, " - ", x.shape)
+            print("shape after module", i, " - ", x.shape)
         return x.squeeze(2)
 

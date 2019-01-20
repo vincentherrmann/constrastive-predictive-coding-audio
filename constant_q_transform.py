@@ -134,7 +134,7 @@ class CQT(nn.Module):
             this_filter = torch.cat([torch.from_numpy(np.real(this_filter)),
                                      torch.from_numpy(np.imag(this_filter))], dim=0).type(torch.FloatTensor)
             this_conv = nn.Conv1d(in_channels=1, out_channels=this_filter.shape[0], kernel_size=size, bias=False,
-                                  stride=hop_length, padding=size // 2)
+                                  stride=hop_length)  # , padding=size // 2)
             this_conv.weight = torch.nn.Parameter(this_filter.unsqueeze(1), requires_grad=False) # should be False
             self.conv_modules.append(this_conv)
 
@@ -154,8 +154,9 @@ class CQT(nn.Module):
     def forward(self, x):
         real = []
         imag = []
-        for conv in self.conv_modules:
-            conv_result = conv(x)
+        for i, conv in enumerate(self.conv_modules):
+            offset = (self.conv_kernel_sizes[0] - self.conv_kernel_sizes[i]) // 2
+            conv_result = conv(x[:, :, offset:-(offset+1)])
             r, i = torch.chunk(conv_result, 2, dim=1)
             real.append(r)
             imag.append(i)
