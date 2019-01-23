@@ -10,7 +10,7 @@ from sklearn import svm
 class ContrastiveEstimationTrainer:
     def __init__(self, model: AudioPredictiveCodingModel, dataset, visible_length, prediction_length, logger=None, device=None,
                  use_all_GPUs=True,
-                 regularization=1., validation_set=None, test_task_set=None):
+                 regularization=1., validation_set=None, test_task_set=None, prediction_noise=0.01):
         self.model = model
         self.encoder = model.encoder
         self.ar_size = model.ar_size
@@ -28,6 +28,7 @@ class ContrastiveEstimationTrainer:
         self.test_task_set = test_task_set
         self.training_step = 0
         self.print_out_scores = False
+        self.prediction_noise = prediction_noise
 
     def train(self,
               batch_size=32,
@@ -57,6 +58,9 @@ class ContrastiveEstimationTrainer:
 
                 targets = targets.permute(2, 1, 0)  # step, length, batch
                 predictions = predictions.permute(1, 0, 2)  # step, batch, length
+
+                # prediction noise injection
+                predictions += torch.randn_like(predictions) * self.prediction_noise
 
                 #scores = torch.sigmoid(torch.matmul(predictions, targets)).squeeze() # step, data_batch, target_batch
                 lin_scores = torch.matmul(predictions, targets).squeeze()  # step, data_batch, target_batch

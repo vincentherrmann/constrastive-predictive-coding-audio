@@ -80,3 +80,68 @@ class ScalogramEncoder(nn.Module):
             #print("shape after module", i, " - ", x.shape)
         return x.squeeze(2)
 
+
+class ScalogramSeperableEncoder(nn.Module):
+    def __init__(self, args_dict=scalogram_encoder_default_dict):
+        super().__init__()
+        self.num_layers = len(args_dict['kernel_sizes'])
+
+        self.cqt = CQT(sr=args_dict['sample_rate'],
+                       fmin=args_dict['fmin'],
+                       n_bins=args_dict['n_bins'],
+                       bins_per_octave=args_dict['bins_per_octave'],
+                       filter_scale=args_dict['filter_scale'],
+                       hop_length=args_dict['hop_length'],
+                       trainable=args_dict['trainable_cqt'])
+
+        self.module_list = nn.ModuleList()
+
+        for l in range(self.num_layers):
+            if args_dict['top_padding'][l] > 0:
+                self.module_list.add_module('pad_' + str(l),
+                                            nn.ZeroPad2d((0, 0, args_dict['top_padding'][l], 0)))
+
+            if l == 0:
+                self.module_list.add_module('conv_' + str(l),
+                                            nn.Conv2d(in_channels=args_dict['channel_count'][l],
+                                                      out_channels=args_dict['channel_count'][l+1],
+                                                      kernel_size=args_dict['kernel_sizes'][l],
+                                                      bias=args_dict['bias']))
+            else:
+                # use seperable convolutions
+                self.module_list.add_module('conv_' + str(l),
+                                            nn.Conv2d(in_channels=args_dict['channel_count'][l],
+                                                      out_channels=args_dict['channel_count'][l],
+                                                      kernel_size=args_dict['kernel_sizes'][l],
+                                                      bias=args_dict['bias'],
+                                                      groups=args_dict['channel_count'][l]))
+
+                self.module_list.add_module('conv_x1_' + str(l),
+                                            nn.Conv2d(in_channels=args_dict['channel_count'][l],
+                                                      out_channels=args_dict['channel_count'][l+1],
+                                                      kernel_size=1,
+                                                      bias=args_dict['bias']))
+            if args_dict['pooling'][l] > 1:
+                self.module_list.add_module('pooling_' + str(l),
+                                            nn.MaxPool2d(kernel_size=args_dict['pooling'][l]))
+
+            if l < self.num_layers-1:
+                self.module_list.add_module('relu_' + str(l),
+                                            nn.ReLU())
+
+        self.receptive_field = self.cqt.conv_kernel_sizes[0]
+        s = args_dict['hop_length']
+        for i in range(1, self.num_layers):
+            s *= args_dict['pooling'][i - 1]
+            self.receptive_field += (args_dict['kernel_sizes'][i][1] - 1) * s
+
+        self.downsampling_factor = args_dict['hop_length'] * np.prod(args_dict['pooling'])
+
+    def forward(self, x):
+        x = self.cqt(x)
+        x = abs(x).unsqueeze(1)
+        for i, module in enumerate(self.module_list):
+            x = module(x)
+            #print("shape after module", i, " - ", x.shape)
+        return x.squeeze(2)
+
