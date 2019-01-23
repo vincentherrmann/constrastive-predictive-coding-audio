@@ -10,7 +10,8 @@ from sklearn import svm
 class ContrastiveEstimationTrainer:
     def __init__(self, model: AudioPredictiveCodingModel, dataset, visible_length, prediction_length, logger=None, device=None,
                  use_all_GPUs=True,
-                 regularization=1., validation_set=None, test_task_set=None, prediction_noise=0.01):
+                 regularization=1., validation_set=None, test_task_set=None, prediction_noise=0.01,
+                 optimizer=torch.optim.Adam):
         self.model = model
         self.encoder = model.encoder
         self.ar_size = model.ar_size
@@ -29,6 +30,7 @@ class ContrastiveEstimationTrainer:
         self.training_step = 0
         self.print_out_scores = False
         self.prediction_noise = prediction_noise
+        self.optimizer = optimizer
 
     def train(self,
               batch_size=32,
@@ -38,7 +40,7 @@ class ContrastiveEstimationTrainer:
               num_workers=1,
               max_steps=None):
         self.model.train()
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
+        optimizer = self.optimizer(self.model.parameters(), lr=lr)
         dataloader = torch.utils.data.DataLoader(self.dataset,
                                                  batch_size=batch_size,
                                                  shuffle=True,
