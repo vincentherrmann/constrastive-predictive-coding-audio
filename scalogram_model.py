@@ -74,7 +74,8 @@ class ScalogramEncoder(nn.Module):
 
     def forward(self, x):
         x = self.cqt(x)
-        x = torch.log(torch.pow(abs(x), 2)).unsqueeze(1)
+        x = torch.pow(abs(x), 2)
+        x = torch.log(x + 1e-9).unsqueeze(1)
         for i, module in enumerate(self.module_list):
             x = module(x)
             #print("shape after module", i, " - ", x.shape)
@@ -139,7 +140,8 @@ class ScalogramSeperableEncoder(nn.Module):
 
     def forward(self, x):
         x = self.cqt(x)
-        x = torch.log(torch.pow(abs(x), 2)).unsqueeze(1)
+        x = torch.pow(abs(x), 2)
+        x = torch.log(x + 1e-9).unsqueeze(1)
         for i, module in enumerate(self.module_list):
             x = module(x)
             #print("shape after module", i, " - ", x.shape)
