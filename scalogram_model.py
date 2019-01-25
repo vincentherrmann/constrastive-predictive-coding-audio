@@ -190,6 +190,6 @@ class ScalogramSeperableEncoder(nn.Module):
 
         for i, module in enumerate(self.module_list):
             x = module(x)
-            print("shape after module", i, " - ", x.shape)
+            #print("shape after module", i, " - ", x.shape)
         return x.squeeze(2)
 
