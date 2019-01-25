@@ -18,7 +18,9 @@ scalogram_encoder_default_dict = {'kernel_sizes': [(127, 1), (5, 5), (63, 1), (5
                                   'bins_per_octave': 32,
                                   'filter_scale': 0.5,
                                   'hop_length': 128,
-                                  'trainable_cqt': False}
+                                  'trainable_cqt': False,
+                                  'batch_norm': False,
+                                  'phase': False}
 
 # 500 x 256 -> (127, 1) with 126 padding
 # 500 x 256 -> (5, 5)
@@ -44,6 +46,17 @@ class ScalogramEncoder(nn.Module):
                        hop_length=args_dict['hop_length'],
                        trainable=args_dict['trainable_cqt'])
 
+        self.phase = args_dict['phase']
+        if self.phase:
+            args_dict['channel_count'][0] = 2
+            self.phase_diff ‚= PhaseDifference(sr=args_dict['sample_rate'],
+                                              fmin=args_dict['fmin'],
+                                              n_bins=args_dict['n_bins'],
+                                              bins_per_octave=args_dict['bins_per_octave'],
+                                              hop_length=args_dict['hop_length'])
+        else:
+            args_dict['channel_count'][0] = 1
+
         self.module_list = nn.ModuleList()
 
         for l in range(self.num_layers):
@@ -63,6 +76,9 @@ class ScalogramEncoder(nn.Module):
             if l < self.num_layers-1:
                 self.module_list.add_module('relu_' + str(l),
                                             nn.ReLU())
+                if args_dict['batch_norm']:
+                    self.module_list.add_module('batch_norm_' + str(l),
+                                                nn.BatchNorm2d(num_features=args_dict['channel_count'][l+1]))
 
         self.receptive_field = self.cqt.conv_kernel_sizes[0]
         s = args_dict['hop_length']
@@ -74,8 +90,16 @@ class ScalogramEncoder(nn.Module):
 
     def forward(self, x):
         x = self.cqt(x)
-        x = torch.pow(abs(x), 2)
-        x = torch.log(x + 1e-9).unsqueeze(1)
+
+        if self.phase:
+            amp = torch.pow(abs(x[:, :, 1:]), 2)
+            amp = torch.log(amp + 1e-9)
+            phi = self.phase_diff(angle(x))
+            x = torch.stack([amp, phi], dim=1)
+        else:
+            x = torch.pow(abs(x), 2)
+            x = torch.log(x + 1e-9).unsqueeze(1)
+
         for i, module in enumerate(self.module_list):
             x = module(x)
             #print("shape after module", i, " - ", x.shape)
@@ -94,6 +118,17 @@ class ScalogramSeperableEncoder(nn.Module):
                        filter_scale=args_dict['filter_scale'],
                        hop_length=args_dict['hop_length'],
                        trainable=args_dict['trainable_cqt'])
+
+        self.phase = args_dict['phase']
+        if self.phase:
+            args_dict['channel_count'][0] = 2
+            self.phase_diff = PhaseDifference(sr=args_dict['sample_rate'],
+                                              fmin=args_dict['fmin'],
+                                              n_bins=args_dict['n_bins'],
+                                              bins_per_octave=args_dict['bins_per_octave'],
+                                              hop_length=args_dict['hop_length'])
+        else:
+            args_dict['channel_count'][0] = 1
 
         self.module_list = nn.ModuleList()
 
@@ -129,6 +164,9 @@ class ScalogramSeperableEncoder(nn.Module):
             if l < self.num_layers-1:
                 self.module_list.add_module('relu_' + str(l),
                                             nn.ReLU())
+                if args_dict['batch_norm']:
+                    self.module_list.add_module('batch_norm_' + str(l),
+                                                nn.BatchNorm2d(num_features=args_dict['channel_count'][l+1]))
 
         self.receptive_field = self.cqt.conv_kernel_sizes[0]
         s = args_dict['hop_length']
@@ -140,10 +178,18 @@ class ScalogramSeperableEncoder(nn.Module):
 
     def forward(self, x):
         x = self.cqt(x)
-        x = torch.pow(abs(x), 2)
-        x = torch.log(x + 1e-9).unsqueeze(1)
+
+        if self.phase:
+            amp = torch.pow(abs(x[:, :, 1:]), 2)
+            amp = torch.log(amp + 1e-9)
+            phi = self.phase_diff(angle(x))
+            x = torch.stack([amp, phi], dim=1)
+        else:
+            x = torch.pow(abs(x), 2)
+            x = torch.log(x + 1e-9).unsqueeze(1)
+
         for i, module in enumerate(self.module_list):
             x = module(x)
-            #print("shape after module", i, " - ", x.shape)
+            print("shape after module", i, " - ", x.shape)
         return x.squeeze(2)
 

@@ -31,6 +31,20 @@ class TestAudioDataset(TestCase):
         sample = dataset[995]
         assert sample.shape[0] == 500
 
+    def test_testingDataset(self):
+        dataset = AudioTestingDataset(location='/Users/vincentherrmann/Documents/Projekte/Immersions/audio_clips/dataset',
+                                      item_length=500,
+                                      unique_length=267)
+        print("dataset has length", len(dataset))
+        assert len(dataset) == 981
+
+        sample, target = dataset[0]
+        assert sample.shape[0] == 500
+
+        sample, target = dataset[980]
+        assert sample.shape[0] == 500
+
+
     def test_minibatch_performance(self):
         dataset = AudioDataset(location='/Users/vincentherrmann/Documents/Projekte/Immersions/MelodicProgressiveHouse_Tracks_test',
                                item_length=12465)
@@ -74,3 +88,4 @@ class TestAudioDataset(TestCase):
         # time per minibatch: 0.04821853160858154 s with 2 workers
         # time per minibatch: 0.046169569492340086 s with 4 workers
         # time per minibatch: 0.07003917932510376 s with 16 workers
+

@@ -71,5 +71,18 @@ class TestContrastiveEstimationTrainer(TestCase):
     def test_trainingMemoryUsage(self):
         print("parameter count of model:", self.pc_model.parameter_count())
 
+    def test_testTask(self):
+        visible_steps = 64
+        visible_length = self.encoder.receptive_field + (visible_steps - 1) * self.encoder.downsampling_factor
+
+        test_dataset = AudioTestingDataset(location='/Users/vincentherrmann/Documents/Projekte/Immersions/MelodicProgressiveHouse_Tracks_small_test',
+                                           item_length=visible_length)
+        self.trainer = ContrastiveEstimationTrainer(model=self.pc_model,
+                                                    dataset=self.dataset,
+                                                    visible_length=visible_length,
+                                                    prediction_length=0,
+                                                    test_task_set=test_dataset)
+        accuracy = self.trainer.test_task(num_workers=4)
+        assert accuracy > 0. and accuracy < 1.
 
 
