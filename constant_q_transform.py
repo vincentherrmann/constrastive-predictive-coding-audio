@@ -259,8 +259,10 @@ class PhaseDifference(nn.Module):
                                                   n_bins=n_bins)
         self.fixed_phase_diff = torch.from_numpy((((1.0 * freqs * hop_length / sr) + 0.5) % 1 - 0.5) * 2 * np.pi)
         self.fixed_phase_diff = self.fixed_phase_diff.type(torch.FloatTensor).view(1, -1, 1)
+        self.fixed_phase_diff = torch.nn.Parameter(self.fixed_phase_diff, requires_grad=False)
         self.scaling = torch.from_numpy(1 / np.log(freqs))
         self.scaling = self.scaling.type(torch.FloatTensor).view(1, -1, 1)
+        self.scaling = torch.nn.Parameter(self.scaling, requires_grad=False)
 
     def forward(self, x):
         phase_diff = x[:, :, 1:] - x[:, :, :-1]
@@ -268,10 +270,10 @@ class PhaseDifference(nn.Module):
         pd = unwrap(pd) * self.scaling
         return pd
 
-    def to(self, device):
-        super().to(device)
-        self.fixed_phase_diff = self.fixed_phase_diff.to(device)
-        self.scaling = self.scaling.to(device)
+    #def to(self, device):
+    #    super().to(device)
+    #    self.fixed_phase_diff = self.fixed_phase_diff.to(device)
+    #    self.scaling = self.scaling.to(device)
 
 
 class PhaseAccumulation(nn.Module):
@@ -286,6 +288,7 @@ class PhaseAccumulation(nn.Module):
         self.scaling = torch.from_numpy(1 / np.log(freqs))
         self.scaling = self.scaling.type(torch.FloatTensor).view(1, -1, 1)
         self.start_phase = torch.zeros_like(self.scaling)
+        # TODO: make these parameters without grads
 
     def forward(self, x):
         x = (x / self.scaling) - self.fixed_phase_diff
