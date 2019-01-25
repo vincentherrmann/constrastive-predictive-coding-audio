@@ -49,7 +49,7 @@ class ScalogramEncoder(nn.Module):
         self.phase = args_dict['phase']
         if self.phase:
             args_dict['channel_count'][0] = 2
-            self.phase_diff ‚= PhaseDifference(sr=args_dict['sample_rate'],
+            self.phase_diff = PhaseDifference(sr=args_dict['sample_rate'],
                                               fmin=args_dict['fmin'],
                                               n_bins=args_dict['n_bins'],
                                               bins_per_octave=args_dict['bins_per_octave'],
