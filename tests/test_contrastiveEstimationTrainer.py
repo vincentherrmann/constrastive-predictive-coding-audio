@@ -86,3 +86,4 @@ class TestContrastiveEstimationTrainer(TestCase):
         assert accuracy > 0. and accuracy < 1.
 
 
+

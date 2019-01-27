@@ -3,6 +3,7 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 import time
+from scipy.special import gamma
 
 from constant_q_transform import *
 
@@ -20,7 +21,9 @@ scalogram_encoder_default_dict = {'kernel_sizes': [(127, 1), (5, 5), (63, 1), (5
                                   'hop_length': 128,
                                   'trainable_cqt': False,
                                   'batch_norm': False,
-                                  'phase': False}
+                                  'phase': False,
+                                  'seperable': False,
+                                  'lowpass_init': 0.}
 
 # 500 x 256 -> (127, 1) with 126 padding
 # 500 x 256 -> (5, 5)
@@ -64,11 +67,22 @@ class ScalogramEncoder(nn.Module):
                 self.module_list.add_module('pad_' + str(l),
                                             nn.ZeroPad2d((0, 0, args_dict['top_padding'][l], 0)))
 
-            self.module_list.add_module('conv_' + str(l),
-                                        nn.Conv2d(in_channels=args_dict['channel_count'][l],
-                                            out_channels=args_dict['channel_count'][l+1],
-                                            kernel_size=args_dict['kernel_sizes'][l],
-                                            bias=args_dict['bias']))
+            if l > 0 and args_dict['seperable']:
+                self.module_list.add_module('conv_' + str(l),
+                                            Conv2dSeperable(in_channels=args_dict['channel_count'][l],
+                                                            out_channels=args_dict['channel_count'][l+1],
+                                                            kernel_size=args_dict['kernel_sizes'][l],
+                                                            bias=args_dict['bias']))
+            else:
+                self.module_list.add_module('conv_' + str(l),
+                                            nn.Conv2d(in_channels=args_dict['channel_count'][l],
+                                                out_channels=args_dict['channel_count'][l+1],
+                                                kernel_size=args_dict['kernel_sizes'][l],
+                                                bias=args_dict['bias']))
+
+            if args_dict['lowpass_init'] > 0 and args_dict['kernel_sizes'][l][1] == 1:
+                lowpass_init(list(self.module_list)[-1].weight, args_dict['lowpass_init'])
+
             if args_dict['pooling'][l] > 1:
                 self.module_list.add_module('pooling_' + str(l),
                                             nn.MaxPool2d(kernel_size=args_dict['pooling'][l]))
@@ -104,6 +118,21 @@ class ScalogramEncoder(nn.Module):
             x = module(x)
             #print("shape after module", i, " - ", x.shape)
         return x.squeeze(2)
+
+
+class Conv2dSeperable(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, bias=True):
+        super().__init__()
+        self.conv = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, kernel_size=kernel_size,
+                              stride=stride, padding=padding, dilation=dilation, bias=bias)
+        self.conv_1x1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1, bias=bias)
+
+    @property
+    def weight(self):
+        return self.conv.weight
+
+    def forward(self, x):
+        return self.conv_1x1(self.conv(x))
 
 
 class ScalogramSeperableEncoder(nn.Module):
@@ -192,4 +221,41 @@ class ScalogramSeperableEncoder(nn.Module):
             x = module(x)
             #print("shape after module", i, " - ", x.shape)
         return x.squeeze(2)
+
+
+def beta_pdf(a, b, num=128):
+  x = np.linspace(0, 1, num)
+  beta = (gamma(a)*gamma(b)) / gamma(a+b)
+  return (x**(a-1) * (1-x)**(b-1)) / beta
+
+
+def beta_init(tensor, factor=2):
+    in_channels = tensor.shape[1]
+    out_channels = tensor.shape[0]
+    size = tensor.shape[2]
+    with torch.no_grad():
+        for i in range(out_channels):
+            p = i // 2
+            if i % 2 == 0:
+                v = beta_pdf(2, factor * (p + 1) + 2, size)
+            else:
+                v = beta_pdf(factor * p + 2, 2, size)
+            v = torch.tensor(v, dtype=tensor.dtype, device=tensor.device).unsqueeze(0).repeat([in_channels, 1])
+            v *= np.sqrt(2 / (in_channels * size))
+            tensor[i, :, :, 0] = v
+
+
+def lowpass_init(tensor, factor=10.):
+    in_channels = tensor.shape[1]
+    out_channels = tensor.shape[0]
+    size = tensor.shape[2]
+    with torch.no_grad():
+        noise = torch.randn_like(tensor).view(in_channels*out_channels, size)
+        fft = torch.rfft(noise, 1)
+        fft_filter = torch.exp(torch.linspace(0, -factor, size//2 + 1))
+        fft *= fft_filter.unsqueeze(1)
+        ifft = torch.irfft(fft, 1, normalized=False)[:, :size].view(out_channels, in_channels, size, 1)
+        tensor[:] = ifft * np.sqrt(2 / (in_channels * size))
+
+
 

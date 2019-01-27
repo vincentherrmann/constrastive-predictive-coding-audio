@@ -1,9 +1,14 @@
 from unittest import TestCase
 from scalogram_model import *
 from audio_model import *
+from audio_dataset import *
+from contrastive_estimation_training import *
 
 import torch
 import time
+import torch.nn as nn
+
+from matplotlib import pyplot as plt
 
 
 class TestScalogramEncoder(TestCase):
@@ -60,3 +65,36 @@ class TestScalogramEncoder(TestCase):
         print("duration:", toc - tic)
         assert list(test_output.shape) == [16, 512, 180]
         pass
+
+    def test_zero_init_training(self):
+        args_dict = scalogram_encoder_default_dict
+        args_dict['channel_count'] = [1, 16, 16, 32, 32, 64, 64]
+        args_dict['filter_scale'] = 0.5
+        args_dict['seperable'] = True
+        args_dict['lowpass_init'] = 60.
+        encoder = ScalogramEncoder(args_dict)
+        #encoder_modules = list(encoder.module_list)
+        #lowpass_init(encoder_modules[1].weight, 60)
+        #lowpass_init(encoder_modules[6].weight, 60)
+        #lowpass_init(encoder_modules[11].weight, 60)
+        #nn.init.constant_(encoder_modules[1].weight, 0.0)
+        #encoder_modules[1].weight.register_hook(lambda grad: grad + torch.randn_like(grad) * 1e-6)
+        #nn.init.constant_(encoder_modules[6].weight, 0.0)
+        #encoder_modules[6].weight.register_hook(lambda grad: grad + torch.randn_like(grad) * 1e-6)
+        #nn.init.constant_(encoder_modules[11].weight, 0.0)
+        #encoder_modules[11].weight.register_hook(lambda grad: grad + torch.randn_like(grad) * 1e-6)
+
+        visible_steps = 118
+        ar_model = ConvArModel(in_channels=64, conv_channels=64, out_channels=64)
+        pc_model = AudioPredictiveCodingModel(encoder, ar_model, enc_size=64, ar_size=64, prediction_steps=16)
+        item_length = encoder.receptive_field + (visible_steps + pc_model.prediction_steps) * encoder.downsampling_factor
+        dataset = AudioDataset(location='/Users/vincentherrmann/Documents/Projekte/Immersions/MelodicProgressiveHouse_Tracks_test',
+                               item_length=item_length)
+        visible_length = encoder.receptive_field + (visible_steps - 1) * encoder.downsampling_factor
+        prediction_length = encoder.receptive_field + (pc_model.prediction_steps - 1) * encoder.downsampling_factor
+        trainer = ContrastiveEstimationTrainer(model=pc_model,
+                                                    dataset=dataset,
+                                                    visible_length=visible_length,
+                                                    prediction_length=prediction_length)
+        trainer.train(8)
+
