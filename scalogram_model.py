@@ -74,11 +74,14 @@ class ScalogramEncoder(nn.Module):
                                                             kernel_size=args_dict['kernel_sizes'][l],
                                                             bias=args_dict['bias']))
             else:
+                bias = False
+                if args_dict['kernel_sizes'][l][1] > 1:
+                    bias = args_dict['bias']
                 self.module_list.add_module('conv_' + str(l),
                                             nn.Conv2d(in_channels=args_dict['channel_count'][l],
                                                 out_channels=args_dict['channel_count'][l+1],
                                                 kernel_size=args_dict['kernel_sizes'][l],
-                                                bias=args_dict['bias']))
+                                                bias=bias))
 
             if args_dict['lowpass_init'] > 0 and args_dict['kernel_sizes'][l][1] == 1:
                 lowpass_init(list(self.module_list)[-1].weight, args_dict['lowpass_init'])
@@ -124,7 +127,7 @@ class Conv2dSeperable(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, bias=True):
         super().__init__()
         self.conv = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, kernel_size=kernel_size,
-                              stride=stride, padding=padding, dilation=dilation, bias=bias)
+                              stride=stride, padding=padding, dilation=dilation, bias=False)
         self.conv_1x1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1, bias=bias)
 
     @property
