@@ -97,6 +97,13 @@ class CQT(nn.Module):
 
         self.hop_length = hop_length
 
+        self.sr = sr
+        self.fmin = fmin
+        self.n_bins = n_bins
+        self.bins_per_octave = bins_per_octave
+        self.filter_scale = filter_scale
+        self.hop_length = hop_length
+
         # load filters
         cqt_filters, cqt_filter_lenghts = lr.filters.constant_q(sr,
                                                                 fmin=fmin,
@@ -175,6 +182,14 @@ class InverseCQT(nn.Module):
         super().__init__()
 
         self.hop_length = hop_length
+
+        self.sr = sr
+        self.fmin = fmin
+        self.n_bins = n_bins
+        self.bins_per_octave = bins_per_octave
+        self.filter_scale = filter_scale
+        self.hop_length = hop_length
+
         # load filters
         cqt_filters, cqt_filter_lenghts = lr.filters.constant_q(sr,
                                                                 fmin=fmin,
@@ -288,7 +303,8 @@ class PhaseAccumulation(nn.Module):
         self.scaling = torch.from_numpy(1 / np.log(freqs))
         self.scaling = self.scaling.type(torch.FloatTensor).view(1, -1, 1)
         self.start_phase = torch.zeros_like(self.scaling)
-        # TODO: make these parameters without grads
+        self.scaling = torch.nn.Parameter(self.scaling, requires_grad=False)
+        self.start_phase = torch.nn.Parameter(self.start_phase, requires_grad=False)
 
     def forward(self, x):
         x = (x / self.scaling) - self.fixed_phase_diff
@@ -296,22 +312,27 @@ class PhaseAccumulation(nn.Module):
         x = torch.cumsum(x, dim=2)
         return x % (2 * np.pi) - np.pi
 
-    def to(self, device):
-        super().to(device)
-        self.fixed_phase_diff = self.fixed_phase_diff.to(device)
-        self.scaling = self.scaling.to(device)
-        self.start_phase = self.start_phase.to(device)
+    #def to(self, device):
+    #    super().to(device)
+    #    self.fixed_phase_diff = self.fixed_phase_diff.to(device)
+    #    self.scaling = self.scaling.to(device)
+    #    self.start_phase = self.start_phase.to(device)
 
+
+def invert_cqt_module(cqt):
+    return InverseCQT(cqt.s)
 
 
 def debug_hook(grad):
     print("grad:", grad)
     return grad
 
+
 def debug_backward_hook(module, grad_input, grad_output):
     print("passed through backward hook")
     diagnostic_hook(module, grad_input, grad_output)
     pass
+
 
 def diagnostic_hook(module, grad_input, grad_output):
     module += 1

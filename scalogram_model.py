@@ -12,6 +12,7 @@ scalogram_encoder_default_dict = {'kernel_sizes': [(127, 1), (5, 5), (63, 1), (5
                                   'top_padding': [126, 0, 0, 0, 0, 0],
                                   'channel_count': [1, 32, 32, 64, 128, 256, 512],
                                   'pooling': [1, 2, 1, 2, 1, 1],
+                                  'stride': [1, 1, 1, 1, 1, 1],
                                   'bias': True,
                                   'sample_rate': 16000,
                                   'fmin': 30,
@@ -22,8 +23,9 @@ scalogram_encoder_default_dict = {'kernel_sizes': [(127, 1), (5, 5), (63, 1), (5
                                   'trainable_cqt': False,
                                   'batch_norm': False,
                                   'phase': False,
-                                  'seperable': False,
-                                  'lowpass_init': 0.}
+                                  'separable': False,
+                                  'lowpass_init': 0.,
+                                  'instance_norm': False}
 
 # 500 x 256 -> (127, 1) with 126 padding
 # 500 x 256 -> (5, 5)
@@ -35,6 +37,32 @@ scalogram_encoder_default_dict = {'kernel_sizes': [(127, 1), (5, 5), (63, 1), (5
 # 122 x   5 -> (5, 5)
 # 118 x   1
 
+scalogram_encoder_stride_dict = {'kernel_sizes': [(5, 5), (64, 1), (5, 5), (32, 1), (5, 5), (26, 1)],
+                                  'top_padding': [0, 63, 0, 0, 0, 0],
+                                  'channel_count': [1, 32, 32, 64, 128, 256, 512],
+                                  'pooling': [1, 1, 1, 1, 1, 1],
+                                  'stride': [2, 1, 2, 1, 1, 1],
+                                  'bias': True,
+                                  'sample_rate': 16000,
+                                  'fmin': 30,
+                                  'n_bins': 256,
+                                  'bins_per_octave': 32,
+                                  'filter_scale': 0.5,
+                                  'hop_length': 128,
+                                  'trainable_cqt': False,
+                                  'batch_norm': False,
+                                  'phase': False,
+                                  'separable': False,
+                                  'lowpass_init': 0.,
+                                  'instance_norm': False}
+
+# 500 x 256 -> (5, 5) with stride 2
+# 248 x 126 -> (64, 1) with 63 padding
+# 248 x 126 -> (5, 5) with stride 2
+# 122 x  61->  (32, 1)
+# 122 x  30 -> (5, 5)
+# 118 x  26 -> (26, 1)
+# 118 x   1
 
 class ScalogramEncoder(nn.Module):
     def __init__(self, args_dict=scalogram_encoder_default_dict):
@@ -67,21 +95,23 @@ class ScalogramEncoder(nn.Module):
                 self.module_list.add_module('pad_' + str(l),
                                             nn.ZeroPad2d((0, 0, args_dict['top_padding'][l], 0)))
 
-            if l > 0 and args_dict['seperable']:
+            if l > 0 and args_dict['separable']:
                 self.module_list.add_module('conv_' + str(l),
                                             Conv2dSeperable(in_channels=args_dict['channel_count'][l],
                                                             out_channels=args_dict['channel_count'][l+1],
                                                             kernel_size=args_dict['kernel_sizes'][l],
-                                                            bias=args_dict['bias']))
+                                                            bias=args_dict['bias'],
+                                                            stride=args_dict['stride'][l]))
             else:
                 bias = False
                 if args_dict['kernel_sizes'][l][1] > 1:
                     bias = args_dict['bias']
                 self.module_list.add_module('conv_' + str(l),
                                             nn.Conv2d(in_channels=args_dict['channel_count'][l],
-                                                out_channels=args_dict['channel_count'][l+1],
-                                                kernel_size=args_dict['kernel_sizes'][l],
-                                                bias=bias))
+                                                      out_channels=args_dict['channel_count'][l+1],
+                                                      kernel_size=args_dict['kernel_sizes'][l],
+                                                      bias=bias,
+                                                      stride=args_dict['stride'][l]))
 
             if args_dict['lowpass_init'] > 0 and args_dict['kernel_sizes'][l][1] == 1:
                 lowpass_init(list(self.module_list)[-1].weight, args_dict['lowpass_init'])
@@ -97,13 +127,20 @@ class ScalogramEncoder(nn.Module):
                     self.module_list.add_module('batch_norm_' + str(l),
                                                 nn.BatchNorm2d(num_features=args_dict['channel_count'][l+1]))
 
+                if args_dict['instance_norm']:
+                    self.module_list.add_module('instance_norm_' + str(l),
+                                                nn.InstanceNorm2d(num_features=args_dict['channel_count'][l + 1],
+                                                                  affine=True,
+                                                                  track_running_stats=True))
+
         self.receptive_field = self.cqt.conv_kernel_sizes[0]
         s = args_dict['hop_length']
-        for i in range(1, self.num_layers):
-            s *= args_dict['pooling'][i - 1]
+        for i in range(self.num_layers):
             self.receptive_field += (args_dict['kernel_sizes'][i][1] - 1) * s
+            s *= args_dict['pooling'][i] * args_dict['stride'][i]
 
-        self.downsampling_factor = args_dict['hop_length'] * np.prod(args_dict['pooling'])
+
+        self.downsampling_factor = args_dict['hop_length'] * np.prod(args_dict['pooling']) * np.prod(args_dict['stride'])
 
     def forward(self, x):
         x = self.cqt(x)
@@ -119,7 +156,7 @@ class ScalogramEncoder(nn.Module):
 
         for i, module in enumerate(self.module_list):
             x = module(x)
-            #print("shape after module", i, " - ", x.shape)
+            print("shape after module", i, " - ", x.shape)
         return x.squeeze(2)
 
 
@@ -136,94 +173,6 @@ class Conv2dSeperable(nn.Module):
 
     def forward(self, x):
         return self.conv_1x1(self.conv(x))
-
-
-class ScalogramSeperableEncoder(nn.Module):
-    def __init__(self, args_dict=scalogram_encoder_default_dict):
-        super().__init__()
-        self.num_layers = len(args_dict['kernel_sizes'])
-
-        self.cqt = CQT(sr=args_dict['sample_rate'],
-                       fmin=args_dict['fmin'],
-                       n_bins=args_dict['n_bins'],
-                       bins_per_octave=args_dict['bins_per_octave'],
-                       filter_scale=args_dict['filter_scale'],
-                       hop_length=args_dict['hop_length'],
-                       trainable=args_dict['trainable_cqt'])
-
-        self.phase = args_dict['phase']
-        if self.phase:
-            args_dict['channel_count'][0] = 2
-            self.phase_diff = PhaseDifference(sr=args_dict['sample_rate'],
-                                              fmin=args_dict['fmin'],
-                                              n_bins=args_dict['n_bins'],
-                                              bins_per_octave=args_dict['bins_per_octave'],
-                                              hop_length=args_dict['hop_length'])
-        else:
-            args_dict['channel_count'][0] = 1
-
-        self.module_list = nn.ModuleList()
-
-        for l in range(self.num_layers):
-            if args_dict['top_padding'][l] > 0:
-                self.module_list.add_module('pad_' + str(l),
-                                            nn.ZeroPad2d((0, 0, args_dict['top_padding'][l], 0)))
-
-            if l == 0:
-                self.module_list.add_module('conv_' + str(l),
-                                            nn.Conv2d(in_channels=args_dict['channel_count'][l],
-                                                      out_channels=args_dict['channel_count'][l+1],
-                                                      kernel_size=args_dict['kernel_sizes'][l],
-                                                      bias=args_dict['bias']))
-            else:
-                # use seperable convolutions
-                self.module_list.add_module('conv_' + str(l),
-                                            nn.Conv2d(in_channels=args_dict['channel_count'][l],
-                                                      out_channels=args_dict['channel_count'][l],
-                                                      kernel_size=args_dict['kernel_sizes'][l],
-                                                      bias=args_dict['bias'],
-                                                      groups=args_dict['channel_count'][l]))
-
-                self.module_list.add_module('conv_x1_' + str(l),
-                                            nn.Conv2d(in_channels=args_dict['channel_count'][l],
-                                                      out_channels=args_dict['channel_count'][l+1],
-                                                      kernel_size=1,
-                                                      bias=args_dict['bias']))
-            if args_dict['pooling'][l] > 1:
-                self.module_list.add_module('pooling_' + str(l),
-                                            nn.MaxPool2d(kernel_size=args_dict['pooling'][l]))
-
-            if l < self.num_layers-1:
-                self.module_list.add_module('relu_' + str(l),
-                                            nn.ReLU())
-                if args_dict['batch_norm']:
-                    self.module_list.add_module('batch_norm_' + str(l),
-                                                nn.BatchNorm2d(num_features=args_dict['channel_count'][l+1]))
-
-        self.receptive_field = self.cqt.conv_kernel_sizes[0]
-        s = args_dict['hop_length']
-        for i in range(1, self.num_layers):
-            s *= args_dict['pooling'][i - 1]
-            self.receptive_field += (args_dict['kernel_sizes'][i][1] - 1) * s
-
-        self.downsampling_factor = args_dict['hop_length'] * np.prod(args_dict['pooling'])
-
-    def forward(self, x):
-        x = self.cqt(x)
-
-        if self.phase:
-            amp = torch.pow(abs(x[:, :, 1:]), 2)
-            amp = torch.log(amp + 1e-9)
-            phi = self.phase_diff(angle(x))
-            x = torch.stack([amp, phi], dim=1)
-        else:
-            x = torch.pow(abs(x), 2)
-            x = torch.log(x + 1e-9).unsqueeze(1)
-
-        for i, module in enumerate(self.module_list):
-            x = module(x)
-            #print("shape after module", i, " - ", x.shape)
-        return x.squeeze(2)
 
 
 def beta_pdf(a, b, num=128):
