@@ -97,13 +97,14 @@ class ContrastiveEstimationTrainer:
                 loss.backward()
                 optimizer.step()
 
-                self.training_step += 1
                 if self.logger is not None:
                     self.logger.loss_meter.update(loss.item())
                     self.logger.score_meter.update(torch.max(scores).item())
                     self.logger.log(self.training_step)
                 elif self.training_step % 1 == 0:
                     print("loss at step step " + str(self.training_step) + ":", loss.item())
+
+                self.training_step += 1
 
                 if max_steps is not None and self.training_step >= max_steps:
                     return
@@ -154,7 +155,8 @@ class ContrastiveEstimationTrainer:
             prediction_losses = -torch.mean(loss_logits, dim=1)
             loss = torch.mean(prediction_losses)
 
-            loss += self.regularization * (1 - torch.mean(scores)) ** 2  # regulate loss
+            loss += self.regularization * torch.mean(torch.mean(lin_scores, dim=1) ** 2)  # regulate loss
+            #loss += self.regularization * (1 - torch.mean(scores)) ** 2
 
             total_prediction_losses += prediction_losses.detach()
             total_accurate_predictions += prediction_accuracy.detach()
