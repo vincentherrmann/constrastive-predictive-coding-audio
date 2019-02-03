@@ -76,7 +76,8 @@ class AudioGRUModel(nn.Module):
 
 
 class ConvArModel(nn.Module):
-    def __init__(self, kernel_sizes=[9, 9, 9, 8], in_channels=512, conv_channels=256, out_channels=256, bias=True, batch_norm=False):
+    def __init__(self, kernel_sizes=[9, 9, 9, 8], in_channels=512, conv_channels=256, out_channels=256, bias=True, batch_norm=False,
+                 dropout=0.0):
         super().__init__()
         self.module_list = nn.ModuleList()
         channel_count = in_channels
@@ -92,6 +93,8 @@ class ConvArModel(nn.Module):
                                               groups=channel_count,
                                               bias=bias))
             self.module_list.append(nn.ReLU())
+            if dropout > 0.:
+                self.module_list.append(nn.Dropout(dropout))
             if batch_norm:
                 self.module_list.append(nn.BatchNorm1d(channel_count))
             if l < len(kernel_sizes) - 1:
