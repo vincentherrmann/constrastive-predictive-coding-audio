@@ -93,12 +93,15 @@ class ConvArModel(nn.Module):
                                               groups=channel_count,
                                               bias=bias))
             self.module_list.append(nn.ReLU())
-            if dropout > 0.:
-                self.module_list.append(nn.Dropout(dropout))
-            if batch_norm:
-                self.module_list.append(nn.BatchNorm1d(channel_count))
+
             if l < len(kernel_sizes) - 1:
                 self.module_list.append(nn.MaxPool1d(2, ceil_mode=True))
+
+                if dropout > 0.:
+                    self.module_list.append(nn.Dropout(dropout))
+
+            if batch_norm:
+                self.module_list.append(nn.BatchNorm1d(channel_count))
         self.module_list.append(nn.Conv1d(in_channels=channel_count,
                                           out_channels=out_channels,
                                           kernel_size=1,

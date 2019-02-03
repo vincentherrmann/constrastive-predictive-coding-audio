@@ -111,6 +111,11 @@ class ScalogramEncoder(nn.Module):
             if l < self.num_layers-1:
                 self.module_list.add_module('relu_' + str(l),
                                             nn.ReLU())
+
+                if args_dict['dropout'] > 0.:
+                    self.module_list.add_module('dropout_' + str(l),
+                                                nn.Dropout2d(args_dict['dropout']))
+
                 if args_dict['batch_norm']:
                     self.module_list.add_module('batch_norm_' + str(l),
                                                 nn.BatchNorm2d(num_features=args_dict['channel_count'][l+1]))
@@ -120,10 +125,6 @@ class ScalogramEncoder(nn.Module):
                                                 nn.InstanceNorm2d(num_features=args_dict['channel_count'][l + 1],
                                                                   affine=True,
                                                                   track_running_stats=True))
-
-            if args_dict['dropout'] > 0.:
-                self.module_list.add_module('dropout_' + str(l),
-                                            nn.Dropout2d(args_dict['dropout']))
 
         self.receptive_field = self.cqt.conv_kernel_sizes[0]
         s = args_dict['hop_length']
