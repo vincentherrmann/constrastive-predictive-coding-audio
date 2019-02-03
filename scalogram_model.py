@@ -25,7 +25,8 @@ scalogram_encoder_default_dict = {'kernel_sizes': [(127, 1), (5, 5), (63, 1), (5
                                   'phase': False,
                                   'separable': False,
                                   'lowpass_init': 0.,
-                                  'instance_norm': False}
+                                  'instance_norm': False,
+                                  'dropout': 0.}
 
 # 500 x 256 -> (127, 1) with 126 padding
 # 500 x 256 -> (5, 5)
@@ -37,24 +38,11 @@ scalogram_encoder_default_dict = {'kernel_sizes': [(127, 1), (5, 5), (63, 1), (5
 # 122 x   5 -> (5, 5)
 # 118 x   1
 
-scalogram_encoder_stride_dict = {'kernel_sizes': [(5, 5), (64, 1), (5, 5), (32, 1), (5, 5), (26, 1)],
-                                  'top_padding': [0, 63, 0, 0, 0, 0],
-                                  'channel_count': [1, 32, 32, 64, 128, 256, 512],
-                                  'pooling': [1, 1, 1, 1, 1, 1],
-                                  'stride': [2, 1, 2, 1, 1, 1],
-                                  'bias': True,
-                                  'sample_rate': 16000,
-                                  'fmin': 30,
-                                  'n_bins': 256,
-                                  'bins_per_octave': 32,
-                                  'filter_scale': 0.5,
-                                  'hop_length': 128,
-                                  'trainable_cqt': False,
-                                  'batch_norm': False,
-                                  'phase': False,
-                                  'separable': False,
-                                  'lowpass_init': 0.,
-                                  'instance_norm': False}
+scalogram_encoder_stride_dict = scalogram_encoder_default_dict.copy()
+scalogram_encoder_stride_dict['kernel_sizes'] = [(5, 5), (64, 1), (5, 5), (32, 1), (5, 5), (26, 1)]
+scalogram_encoder_stride_dict['top_padding'] = [0, 63, 0, 0, 0, 0]
+scalogram_encoder_stride_dict['pooling'] = [1, 1, 1, 1, 1, 1]
+scalogram_encoder_stride_dict['stride'] = [2, 1, 2, 1, 1, 1]
 
 # 500 x 256 -> (5, 5) with stride 2
 # 248 x 126 -> (64, 1) with 63 padding
@@ -132,6 +120,10 @@ class ScalogramEncoder(nn.Module):
                                                 nn.InstanceNorm2d(num_features=args_dict['channel_count'][l + 1],
                                                                   affine=True,
                                                                   track_running_stats=True))
+
+            if args_dict['dropout'] > 0.:
+                self.module_list.add_module('dropout_' + str(l),
+                                            nn.Dropout2d(args_dict['dropout']))
 
         self.receptive_field = self.cqt.conv_kernel_sizes[0]
         s = args_dict['hop_length']
