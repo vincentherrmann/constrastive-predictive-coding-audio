@@ -44,13 +44,13 @@ scalogram_encoder_stride_dict['top_padding'] = [0, 63, 0, 0, 0, 0]
 scalogram_encoder_stride_dict['pooling'] = [1, 1, 1, 1, 1, 1]
 scalogram_encoder_stride_dict['stride'] = [2, 1, 2, 1, 1, 1]
 
-# 500 x 256 -> (5, 5) with stride 2
-# 248 x 126 -> (64, 1) with 63 padding
-# 248 x 126 -> (5, 5) with stride 2
-# 122 x  61->  (32, 1)
-# 122 x  30 -> (5, 5)
-# 118 x  26 -> (26, 1)
-# 118 x   1
+# 500 x 256 -> (5, 5) with stride 2      2  256000
+# 248 x 126 -> (64, 1) with 63 padding  32  999936
+# 248 x 126 -> (5, 5) with stride 2     32  999936
+# 122 x  61 -> (32, 1)                  64  476288
+# 122 x  30 -> (5, 5)                  128  468480
+# 118 x  26 -> (26, 1)                 256
+# 118 x   1                            512
 
 class ScalogramEncoder(nn.Module):
     def __init__(self, args_dict=scalogram_encoder_default_dict):
@@ -151,6 +151,155 @@ class ScalogramEncoder(nn.Module):
             x = module(x)
             #print("shape after module", i, " - ", x.shape)
         return x.squeeze(2)
+
+
+class ScalogramEncoderBlock(nn.Module):
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 hidden_channels,
+                 kernel_a_size,
+                 kernel_b_size,
+                 bias=True,
+                 pooling=1,
+                 stride=2,
+                 top_padding=None,
+                 separable=True,
+                 dropout=0.0,
+                 residual=True):
+        super().__init__()
+
+        #   +--------------- pooling -- conv_1x1 ----------------+
+        #   |                                                    |
+        # --+-- conv_a -- pooling -- ReLU -- padding -- conv_b --+--
+
+        conv_module = Conv2dSeperable if separable else nn.Conv2d
+
+        self.main_modules = nn.ModuleList()
+
+        self.main_modules.append(conv_module(in_channels=in_channels,
+                                             out_channels=hidden_channels,
+                                             kernel_size=kernel_a_size,
+                                             bias=bias,
+                                             stride=stride))
+
+        if pooling > 1:
+            self.main_modules.append(nn.MaxPool2d(kernel_size=pooling))
+
+        self.main_modules.append(nn.ReLU())
+
+        if top_padding is not None:
+            self.main_modules.append(nn.ZeroPad2d((0, 0, top_padding, 0)))
+
+        self.main_modules.append(conv_module(in_channels=hidden_channels,
+                                             out_channels=out_channels,
+                                             kernel_size=kernel_b_size,
+                                             bias=bias))
+
+        self.residual = residual
+        if self.residual:
+            self.residual_modules = nn.ModuleList()
+
+            stride_pool = stride * pooling
+            if stride_pool > 1:
+                self.residual_modules.append(nn.MaxPool2d(kernel_size=stride_pool))
+
+            if in_channels != out_channels:
+                self.residual_modules.append(nn.Conv2d(in_channels=in_channels,
+                                                       out_channels=out_channels,
+                                                       kernel_size=1,
+                                                       bias=False))
+
+    def forward(self, x):
+        original_input = x
+        for m in self.main_modules:
+            x = m(x)
+        main = x
+        x = original_input
+        if self.residual:
+            for m in self.residual_modules:
+                x = m(x)
+            res = x
+            r_h = res.shape[2]
+            r_w = res.shape[3]
+            m_h = main.shape[2]
+            m_w = main.shape[3]
+            o_h = math.ceil((r_h - m_h) / 2)
+            o_w = math.ceil((r_w - m_w) / 2)
+            if o_h > 0:
+                res = res[:, :, -(o_h + m_h):-o_h, :]
+            if o_w > 0:
+                res = res[:, :, :, -(o_w + m_w):-o_w]
+            main = main + res
+        return main
+
+
+class ScalogramResidualEncoder(nn.Module):
+    def __init__(self, args_dict=scalogram_encoder_default_dict):
+        super().__init__()
+
+        self.cqt = CQT(sr=args_dict['sample_rate'],
+                       fmin=args_dict['fmin'],
+                       n_bins=args_dict['n_bins'],
+                       bins_per_octave=args_dict['bins_per_octave'],
+                       filter_scale=args_dict['filter_scale'],
+                       hop_length=args_dict['hop_length'],
+                       trainable=args_dict['trainable_cqt'])
+
+        self.phase = args_dict['phase']
+        if self.phase:
+            args_dict['channel_count'][0] = 2
+            self.phase_diff = PhaseDifference(sr=args_dict['sample_rate'],
+                                              fmin=args_dict['fmin'],
+                                              n_bins=args_dict['n_bins'],
+                                              bins_per_octave=args_dict['bins_per_octave'],
+                                              hop_length=args_dict['hop_length'])
+        else:
+            args_dict['channel_count'][0] = 1
+
+        block_count = len(args_dict['kernel_sizes']) // 2
+        self.blocks = nn.ModuleList()
+        for b in range(block_count):
+            self.blocks.append(ScalogramEncoderBlock(in_channels=args_dict['channel_count'][2*b],
+                                                     hidden_channels=args_dict['channel_count'][2*b+1],
+                                                     out_channels=args_dict['channel_count'][2*b+2],
+                                                     kernel_a_size=args_dict['kernel_sizes'][2*b],
+                                                     kernel_b_size=args_dict['kernel_sizes'][2*b+1],
+                                                     bias=args_dict['bias'],
+                                                     pooling=args_dict['pooling'][2*b],
+                                                     stride=args_dict['stride'][2*b],
+                                                     top_padding=args_dict['top_padding'][2*b+1],
+                                                     separable=args_dict['separable'],
+                                                     dropout=args_dict['dropout']))
+
+        self.receptive_field = self.cqt.conv_kernel_sizes[0]
+        s = args_dict['hop_length']
+        for i in range(len(args_dict['kernel_sizes'])):
+            self.receptive_field += (args_dict['kernel_sizes'][i][1] - 1) * s
+            s *= args_dict['pooling'][i] * args_dict['stride'][i]
+
+        self.downsampling_factor = args_dict['hop_length'] * np.prod(args_dict['pooling']) * np.prod(
+            args_dict['stride'])
+
+    def forward(self, x):
+        x = self.cqt(x)
+
+        if self.phase:
+            amp = torch.pow(abs(x[:, :, 1:]), 2)
+            amp = torch.log(amp + 1e-9)
+            phi = self.phase_diff(angle(x))
+            x = torch.stack([amp, phi], dim=1)
+        else:
+            x = torch.pow(abs(x), 2)
+            x = torch.log(x + 1e-9).unsqueeze(1)
+
+        for i, block in enumerate(self.blocks):
+            x = block(x)
+            if i < len(self.blocks)-1:
+                x = F.relu(x)
+            #print("shape after module", i, " - ", x.shape)
+        return x.squeeze(2)
+
 
 
 class Conv2dSeperable(nn.Module):
