@@ -4,6 +4,7 @@ import torch.optim
 import torch.utils.data
 import random
 from audio_model import *
+from audio_dataset import *
 from sklearn import svm
 
 
@@ -11,7 +12,8 @@ class ContrastiveEstimationTrainer:
     def __init__(self, model: AudioPredictiveCodingModel, dataset, visible_length, prediction_length, logger=None, device=None,
                  use_all_GPUs=True,
                  regularization=1., validation_set=None, test_task_set=None, prediction_noise=0.01,
-                 optimizer=torch.optim.Adam):
+                 optimizer=torch.optim.Adam,
+                 file_batch_size=1):
         self.model = model
         self.encoder = model.encoder
         self.ar_size = model.ar_size
@@ -31,6 +33,7 @@ class ContrastiveEstimationTrainer:
         self.print_out_scores = False
         self.prediction_noise = prediction_noise
         self.optimizer = optimizer
+        self.file_batch_size = file_batch_size
 
     def train(self,
               batch_size=32,
@@ -41,12 +44,14 @@ class ContrastiveEstimationTrainer:
               max_steps=None):
         self.model.train()
         optimizer = self.optimizer(self.model.parameters(), lr=lr)
+        sampler = FileBatchSampler(index_count_per_file=self.dataset.get_example_count_per_file(),
+                                   batch_size=batch_size,
+                                   file_batch_size=self.file_batch_size,
+                                   drop_last=True)
         dataloader = torch.utils.data.DataLoader(self.dataset,
-                                                 batch_size=batch_size,
-                                                 shuffle=True,
+                                                 batch_sampler=sampler,
                                                  num_workers=num_workers,
-                                                 pin_memory=True,
-                                                 drop_last=True)
+                                                 pin_memory=True)
         self.training_step = continue_training_at_step
 
         for current_epoch in range(epochs):
@@ -116,12 +121,15 @@ class ContrastiveEstimationTrainer:
         self.model.eval()
         total_loss = 0
 
+        sampler = FileBatchSampler(index_count_per_file=self.validation_dataset.get_example_count_per_file(),
+                                   batch_size=batch_size,
+                                   file_batch_size=self.file_batch_size,
+                                   drop_last=True,
+                                   seed=0)
         v_dataloader = torch.utils.data.DataLoader(self.validation_set,
-                                                   batch_size=batch_size,
-                                                   sampler=DeterministicSampler(self.validation_set),
+                                                   batch_sampler=sampler,
                                                    num_workers=num_workers,
-                                                   pin_memory=True,
-                                                   drop_last=True)
+                                                   pin_memory=True)
 
         total_prediction_losses = torch.zeros(self.prediction_steps, requires_grad=False).to(device=self.device)
         total_accurate_predictions = torch.zeros(self.prediction_steps, requires_grad=False).to(device=self.device)

@@ -44,6 +44,20 @@ class TestAudioDataset(TestCase):
         sample, target = dataset[980]
         assert sample.shape[0] == 500
 
+        example_counts = dataset.get_example_count_per_file()
+
+        pos = 0
+        for c in example_counts:
+            sample, target = dataset[pos]
+            print("file at pos", pos, ":", target)
+            pos += c
+            sample, target = dataset[pos-1]
+            print("file at pos", pos-1, ":", target)
+
+        sampler = FileBatchSampler(example_counts, batch_size=16, file_batch_size=1)
+        batches = list(iter(sampler))
+        pass
+
 
     def test_minibatch_performance(self):
         dataset = AudioDataset(location='/Users/vincentherrmann/Documents/Projekte/Immersions/MelodicProgressiveHouse_Tracks_test',

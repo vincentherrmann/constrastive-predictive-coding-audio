@@ -5,6 +5,8 @@ import numpy as np
 import librosa as lr
 import bisect
 import torchaudio
+import random
+import itertools
 from pathlib import Path
 
 
@@ -16,7 +18,8 @@ class AudioDataset(torch.utils.data.Dataset):
                  sampling_rate=16000,
                  mono=True,
                  dtype=torch.FloatTensor,
-                 max_file_count=None):
+                 max_file_count=None,
+                 cross_files=True):
         super().__init__()
         self.location = Path(location)
         self.sampling_rate = sampling_rate
@@ -27,6 +30,7 @@ class AudioDataset(torch.utils.data.Dataset):
         self.start_samples = [0]
         self.dtype = dtype
         self.dummy_load = False
+        self.cross_files = cross_files
 
         self.files = list_all_audio_files(self.location, allowed_types=['.wav'])
         if max_file_count is None:
@@ -74,7 +78,10 @@ class AudioDataset(torch.utils.data.Dataset):
         start_samples = [0]
         for idx in range(self.max_file_count):
             file_data = self.load_file(str(self.files[idx]))
-            start_samples.append(start_samples[-1] + file_data.shape[0])
+            next_start_sample = start_samples[-1] + file_data.shape[0]
+            if not self.cross_files:
+                next_start_sample -= self.item_length
+            start_samples.append(next_start_sample)
         available_length = start_samples[-1] - (self.item_length - self.unique_length)
         self._length = math.floor(available_length / self.unique_length)
         self.start_samples = start_samples
@@ -136,6 +143,18 @@ class AudioDataset(torch.utils.data.Dataset):
         segment = self.load_sample(file_index, position_in_file, item_length)
         return segment
 
+    def get_example_count_per_file(self):
+        example_counts = []
+        for i in range(1, len(self.start_samples)):
+            total_count = math.ceil(self.start_samples[i] / self.unique_length)
+            previous_count = math.ceil(self.start_samples[i-1] / self.unique_length)
+            example_counts.append(total_count - previous_count)
+        l = np.sum(example_counts)
+        if l > self._length:
+            example_counts[-1] = example_counts[-1] - (l - self._length)
+            #print("error in example count calculation")
+        return example_counts
+
     def __len__(self):
         return self._length
 
@@ -148,7 +167,8 @@ class AudioTestingDataset(AudioDataset):
                  sampling_rate=16000,
                  mono=True,
                  dtype=torch.FloatTensor,
-                 max_file_count=None):
+                 max_file_count=None,
+                 cross_files=False):
 
         super().__init__(location=location,
                          item_length=item_length,
@@ -156,21 +176,8 @@ class AudioTestingDataset(AudioDataset):
                          sampling_rate=sampling_rate,
                          mono=mono,
                          dtype=dtype,
-                         max_file_count=max_file_count)
-
-    def calculate_length(self):
-        """
-        Calculate the number of items in this data sets.
-        Additionally the start positions of each file are calculate in this method.
-        Omit last sample in each file to make sure that there are no file-crossing samples.
-        """
-        start_samples = [0]
-        for idx in range(self.max_file_count):
-            file_data = self.load_file(str(self.files[idx]))
-            start_samples.append(start_samples[-1] + file_data.shape[0] - self.item_length)
-        available_length = start_samples[-1] - (self.item_length - self.unique_length)
-        self._length = math.floor(available_length / self.unique_length)
-        self.start_samples = start_samples
+                         max_file_count=max_file_count,
+                         cross_files=cross_files)
 
     def __getitem__(self, idx):
         if self.dummy_load:
@@ -181,6 +188,70 @@ class AudioTestingDataset(AudioDataset):
 
         example = sample[:self._item_length], torch.LongTensor([file_index]).squeeze()
         return example
+
+
+class FileBatchSampler(torch.utils.data.Sampler):
+    def __init__(self, index_count_per_file, batch_size, file_batch_size=1, drop_last=True, seed=None):
+        # [[]]
+        self.index_count_per_file = index_count_per_file
+        self.indices_in_file = []
+        s = 0
+        for f in self.index_count_per_file:
+            self.indices_in_file.append(list(range(s, s+f)))
+            s += f
+        self.batch_size = batch_size
+        self.file_batch_size = file_batch_size
+        self.drop_last = drop_last
+        self.seed = seed
+        if self.drop_last:
+            self.batches_per_file = [math.floor(n / self.file_batch_size) for n in self.index_count_per_file]
+        else:
+            self.batches_per_file = [math.ceil(n / self.file_batch_size) for n in self.index_count_per_file]
+        print("minimum batches per file:", min(self.batches_per_file),
+              "maximum batches per file:", max(self.batches_per_file))
+
+    def chunks(self, l, n, drop_last=False):
+        """Yield successive n-sized chunks from l."""
+        for i in range(0, len(l), n):
+            if drop_last and i+n > len(l):
+                return
+            yield l[i:i + n]
+
+    def chain(self, l, n, drop_last=False):
+        for i in range(0, len(l), n):
+            if drop_last and i+n > len(l):
+                return
+            yield list(itertools.chain(*l[i:i + n]))
+
+    def __iter__(self):
+        if self.file_batch_size == 1:
+            o = list(range(len(self)))
+            if self.seed is not None:
+                random.seed(self.seed)
+            random.shuffle(o)
+            batches = self.chunks(o, n=self.batch_size, drop_last=self.drop_last)
+            return iter(batches)
+
+        for i, f in enumerate(self.indices_in_file):
+            if self.seed is not None:
+                random.seed(self.seed + i)
+            random.shuffle(f)
+
+        batches = []
+        for f in self.indices_in_file:
+            batches.extend(self.chunks(f, n=self.file_batch_size, drop_last=self.drop_last))
+
+        if self.seed is not None:
+            random.seed(self.seed)
+        random.shuffle(batches)
+
+        files_per_batch = self.batch_size // self.file_batch_size
+        if files_per_batch > 1:
+            batches = self.chain(batches, n=files_per_batch, drop_last=self.drop_last)
+        return iter(batches)
+
+    def __len__(self):
+        return np.sum(self.batches_per_file)
 
 
 def list_all_audio_files(location, allowed_types=[".mp3", ".wav", ".aif", "aiff", ".flac"]):

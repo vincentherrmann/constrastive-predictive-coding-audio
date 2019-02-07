@@ -69,6 +69,25 @@ class TestScalogramEncoder(TestCase):
         assert list(test_output.shape) == [16, 512, 118]
         pass
 
+    def test_residual_scalogram_encoder_phase(self):
+        args_dict = scalogram_encoder_stride_dict
+        #args_dict['channel_count'] = [1, 64, 64, 128, 128, 256, 512]
+        #args_dict['filter_scale'] = 0.5
+        #args_dict['batch_norm'] = True
+        args_dict['phase'] = True
+        args_dict['separable'] = True
+        model = ScalogramResidualEncoder(args_dict)
+        print("num parameters:", num_parameters(model))
+        print(model)
+        item_length = model.receptive_field + (118) * model.downsampling_factor
+
+        test_input = torch.randn([16, 1, item_length])
+        tic = time.time()
+        test_output = model(test_input)
+        toc = time.time()
+        print("duration:", toc - tic)
+        assert list(test_output.shape) == [16, 512, 118]
+
     def test_zero_init_training(self):
         args_dict = scalogram_encoder_default_dict
         args_dict['channel_count'] = [1, 16, 16, 32, 32, 64, 64]
