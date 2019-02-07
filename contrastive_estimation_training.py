@@ -121,7 +121,7 @@ class ContrastiveEstimationTrainer:
         self.model.eval()
         total_loss = 0
 
-        sampler = FileBatchSampler(index_count_per_file=self.validation_dataset.get_example_count_per_file(),
+        sampler = FileBatchSampler(index_count_per_file=self.validation_set.get_example_count_per_file(),
                                    batch_size=batch_size,
                                    file_batch_size=self.file_batch_size,
                                    drop_last=True,
