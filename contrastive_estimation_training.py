@@ -87,6 +87,7 @@ class ContrastiveEstimationTrainer:
                     print("mean score:", torch.mean(scores).item())
                     print("mean score sum:", torch.mean(score_sum).item())
                     print("ratio:", torch.mean(score_sum).item() / torch.mean(scores).item())
+                    print("returned with nan loss")
                     return
                 elif self.training_step % 20 == 0 and self.print_out_scores:
                     print("mean target:", torch.mean(targets).item())
@@ -122,8 +123,8 @@ class ContrastiveEstimationTrainer:
         total_loss = 0
 
         sampler = FileBatchSampler(index_count_per_file=self.validation_set.get_example_count_per_file(),
-                                   batch_size=batch_size,
-                                   file_batch_size=self.file_batch_size,
+                                   batch_size=64,
+                                   file_batch_size=8,
                                    drop_last=True,
                                    seed=0)
         v_dataloader = torch.utils.data.DataLoader(self.validation_set,
