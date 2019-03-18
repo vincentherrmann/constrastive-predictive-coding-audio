@@ -58,10 +58,8 @@ class ContrastiveEstimationTrainer:
             print("epoch", current_epoch)
             for batch in iter(dataloader):
                 batch = batch.to(device=self.device)
-                #visible_input = batch[:, :self.visible_length].unsqueeze(1)
-                #target_input = batch[:, -self.prediction_length:].unsqueeze(1)
                 predictions, targets, _, _ = self.model(batch.unsqueeze(1))
-                #targets = self.encoder(target_input).detach()  # TODO: should this really be detached? (Probably yes...)
+                targets = targets.detach()  # TODO: should this really be detached? (Probably yes...)
 
                 targets = targets.permute(2, 1, 0)  # step, length, batch
                 predictions = predictions.permute(1, 0, 2)  # step, batch, length
@@ -69,12 +67,12 @@ class ContrastiveEstimationTrainer:
                 # prediction noise injection
                 predictions += torch.randn_like(predictions) * self.prediction_noise
 
-                #scores = torch.sigmoid(torch.matmul(predictions, targets)).squeeze() # step, data_batch, target_batch
                 lin_scores = torch.matmul(predictions, targets).squeeze()  # step, data_batch, target_batch
                 scores = F.softplus(lin_scores)
                 score_sum = torch.sum(scores, dim=1)  # step, target_batch TODO: should this be detached?
+                score_sum = torch.sum(score_sum, dim=0)  # sum over steps
                 valid_scores = torch.diagonal(scores, dim1=1, dim2=2)  # step, data_batch
-                loss_logits = torch.log(valid_scores / score_sum)  # step, batch
+                loss_logits = torch.log(valid_scores / score_sum.unsqueeze(0))  # step, batch
 
                 prediction_losses = -torch.mean(loss_logits, dim=1)
                 loss = torch.mean(prediction_losses)
@@ -87,7 +85,7 @@ class ContrastiveEstimationTrainer:
                     print("mean score:", torch.mean(scores).item())
                     print("mean score sum:", torch.mean(score_sum).item())
                     print("ratio:", torch.mean(score_sum).item() / torch.mean(scores).item())
-                    print("returned with nan loss")
+                    print("returned with nan loss at step", self.training_step)
                     return
                 elif self.training_step % 20 == 0 and self.print_out_scores:
                     print("mean target:", torch.mean(targets).item())
