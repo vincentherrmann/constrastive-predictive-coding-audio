@@ -59,7 +59,7 @@ class ContrastiveEstimationTrainer:
             for batch in iter(dataloader):
                 batch = batch.to(device=self.device)
                 predictions, targets, _, _ = self.model(batch.unsqueeze(1))
-                targets = targets.detach()  # TODO: should this really be detached? (Probably yes...)
+                #targets = targets.detach()  # TODO: should this really be detached? (Probably yes...)
 
                 targets = targets.permute(2, 1, 0)  # step, length, batch
                 predictions = predictions.permute(1, 0, 2)  # step, batch, length
