@@ -13,7 +13,8 @@ class ContrastiveEstimationTrainer:
                  use_all_GPUs=True,
                  regularization=1., validation_set=None, test_task_set=None, prediction_noise=0.01,
                  optimizer=torch.optim.Adam,
-                 file_batch_size=1):
+                 file_batch_size=1,
+                 sum_score_over_timesteps=False):
         self.model = model
         self.encoder = model.encoder
         self.ar_size = model.ar_size
@@ -34,6 +35,7 @@ class ContrastiveEstimationTrainer:
         self.prediction_noise = prediction_noise
         self.optimizer = optimizer
         self.file_batch_size = file_batch_size
+        self.sum_score_over_timesteps = sum_score_over_timesteps
 
     def train(self,
               batch_size=32,
@@ -70,9 +72,10 @@ class ContrastiveEstimationTrainer:
                 lin_scores = torch.matmul(predictions, targets).squeeze()  # step, data_batch, target_batch
                 scores = F.softplus(lin_scores)
                 score_sum = torch.sum(scores, dim=1)  # step, target_batch TODO: should this be detached?
-                score_sum = torch.sum(score_sum, dim=0)  # sum over steps
+                if self.sum_score_over_timesteps:
+                    score_sum = torch.sum(score_sum, dim=0).unsqueeze(0)  # sum over steps
                 valid_scores = torch.diagonal(scores, dim1=1, dim2=2)  # step, data_batch
-                loss_logits = torch.log(valid_scores / score_sum.unsqueeze(0))  # step, batch
+                loss_logits = torch.log(valid_scores / score_sum)  # step, batch
 
                 prediction_losses = -torch.mean(loss_logits, dim=1)
                 loss = torch.mean(prediction_losses)
@@ -132,8 +135,10 @@ class ContrastiveEstimationTrainer:
 
         total_prediction_losses = torch.zeros(self.prediction_steps, requires_grad=False).to(device=self.device)
         total_accurate_predictions = torch.zeros(self.prediction_steps, requires_grad=False).to(device=self.device)
-        prediction_template = torch.arange(0, batch_size, dtype=torch.long).unsqueeze(0)
-        prediction_template = prediction_template.repeat(self.prediction_steps, 1)
+        prediction_template_batch = torch.arange(0, batch_size, dtype=torch.long).unsqueeze(0)
+        prediction_template_batch = prediction_template_batch.repeat(self.prediction_steps, 1)
+        prediction_template_step = torch.arange(0, self.prediction_steps, dtype=torch.long).unsqueeze(0)
+        prediction_template_step = prediction_template_step.repeat(1, batch_size)
         total_score = 0
 
         if max_steps is None:
@@ -151,12 +156,14 @@ class ContrastiveEstimationTrainer:
             lin_scores = torch.matmul(predictions, targets).squeeze()  # step, data_batch, target_batch
             scores = F.softplus(lin_scores)
             score_sum = torch.sum(scores, dim=1)  # step, target_batch
+            if self.sum_score_over_timesteps:
+                score_sum = torch.sum(score_sum, dim=0).unsqueeze(0)  # sum over steps
             valid_scores = torch.diagonal(scores, dim1=1, dim2=2)  # step, data_batch
             loss_logits = torch.log(valid_scores / score_sum)  # step, batch
 
             # calculate prediction accuracy as the proportion of scores that are highest for the correct target
             max_score_indices = torch.argmax(scores, dim=1)
-            correctly_predicted = torch.eq(prediction_template.type_as(max_score_indices), max_score_indices)
+            correctly_predicted = torch.eq(prediction_template_batch.type_as(max_score_indices), max_score_indices)
             prediction_accuracy = torch.sum(correctly_predicted, dim=1).type_as(batch) / batch_size
 
             prediction_losses = -torch.mean(loss_logits, dim=1)
