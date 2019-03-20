@@ -84,21 +84,21 @@ class ContrastiveEstimationTrainer:
                 if torch.sum(torch.isnan(loss)).item() > 0.:
                     print("nan loss")
                     print("scores:", scores)
-                    #print("mean target:", torch.mean(targets).item())
-                    #print("mean prediction:", torch.mean(predictions).item())
+                    print("mean target:", torch.mean(targets).item())
+                    print("mean prediction:", torch.mean(predictions).item())
                     print("mean score:", torch.mean(scores).item())
                     print("mean score sum:", torch.mean(score_sum).item())
                     print("ratio:", torch.mean(score_sum).item() / torch.mean(scores).item())
                     print("returned with nan loss at step", self.training_step)
                     return
                 elif self.training_step % 20 == 0 and self.print_out_scores:
-                    #print("mean target:", torch.mean(targets).item())
-                    #print("mean prediction:", torch.mean(predictions).item())
+                    print("mean target:", torch.mean(targets).item())
+                    print("mean prediction:", torch.mean(predictions).item())
                     print("mean score:", torch.mean(scores).item())
                     print("mean score sum:", torch.mean(score_sum).item())
                     print("ratio:", torch.mean(score_sum).item() / torch.mean(scores).item())
 
-                loss += self.regularization * torch.mean(torch.mean(scores, dim=1)**2)  # regulate loss
+                loss += self.regularization * torch.mean(torch.mean(lin_scores, dim=1)**2)  # regulate loss
                 #loss = torch.clamp(loss, 0, 5)
 
                 self.model.zero_grad()
@@ -179,7 +179,7 @@ class ContrastiveEstimationTrainer:
             prediction_losses = -torch.mean(loss_logits, dim=0)
             loss = torch.mean(prediction_losses)
 
-            loss += self.regularization * torch.mean(torch.mean(scores, dim=1) ** 2)  # regulate loss
+            #loss += self.regularization * torch.mean(torch.mean(lin_scores, dim=1) ** 2)  # regulate loss
             #loss += self.regularization * (1 - torch.mean(scores)) ** 2
 
             total_prediction_losses += prediction_losses.detach()
