@@ -127,11 +127,16 @@ class AudioPredictiveCodingModel(nn.Module):
 
     def forward(self, x):
         z = self.encoder(x)
-        targets = z[:, :, -self.prediction_steps:]  # .detach()  # TODO should this be detached?
+        targets = z[:, :, -self.prediction_steps:]  # batch, enc_size, step  # .detach()  # TODO should this be detached?
         z = z[:, :, -(self.visible_steps+self.prediction_steps):-self.prediction_steps]
         c = self.autoregressive_model(z)
+
         predicted_z = self.prediction_model(c)  # batch, step*enc_size
-        return predicted_z.view(x.shape[0], self.prediction_steps, self.enc_size), targets, z, c
+        predicted_z = predicted_z.view(-1, self.prediction_steps, self.enc_size)  # batch, step, enc_size
+
+        lin_scores = torch.tensordot(predicted_z, targets, dims=([2], [1]))  # data_batch, data_step, target_batch, target_step
+        scores = F.softplus(lin_scores)
+        return scores, z, c
 
     def parameter_count(self):
         total_parameters = 0
