@@ -60,7 +60,11 @@ class ContrastiveEstimationTrainer:
             print("epoch", current_epoch)
             for batch in iter(dataloader):
                 batch = batch.to(device=self.device)
-                scores, _, _ = self.model(batch.unsqueeze(1))  # data_batch, data_step, target_batch, target_step
+                predicted_z, targets, _, _ = self.model(batch.unsqueeze(1))  # data_batch, data_step, target_batch, target_step
+
+                lin_scores = torch.tensordot(predicted_z, targets,
+                                             dims=([2], [1]))  # data_batch, data_step, target_batch, target_step
+                scores = F.softplus(lin_scores)
 
                 if self.sum_score_over_timesteps:
                     score_sum = torch.sum(scores.view(-1, batch_size, self.prediction_steps),
@@ -148,7 +152,12 @@ class ContrastiveEstimationTrainer:
 
         for step, batch in enumerate(iter(v_dataloader)):
             batch = batch.to(device=self.device)
-            scores, _, _ = self.model(batch.unsqueeze(1))  # data_batch, data_step, target_batch, target_step
+            predicted_z, targets, _, _ = self.model(
+                batch.unsqueeze(1))  # data_batch, data_step, target_batch, target_step
+
+            lin_scores = torch.tensordot(predicted_z, targets,
+                                         dims=([2], [1]))  # data_batch, data_step, target_batch, target_step
+            scores = F.softplus(lin_scores)  # data_batch, data_step, target_batch, target_step
 
             if self.sum_score_over_timesteps:
                 score_sum = torch.sum(scores.view(-1, batch_size, self.prediction_steps),
