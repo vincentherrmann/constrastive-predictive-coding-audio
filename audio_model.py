@@ -127,7 +127,7 @@ class AudioPredictiveCodingModel(nn.Module):
 
     def forward(self, x):
         z = self.encoder(x)
-        targets = z[:, :, -self.prediction_steps:].detach()
+        targets = z[:, :, -self.prediction_steps:]  # .detach()  # TODO should this be detached?
         z = z[:, :, -(self.visible_steps+self.prediction_steps):-self.prediction_steps]
         c = self.autoregressive_model(z)
         predicted_z = self.prediction_model(c)  # batch, step*enc_size
