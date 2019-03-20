@@ -73,7 +73,7 @@ class ContrastiveEstimationTrainer:
                     valid_scores = torch.diagonal(valid_scores, dim1=0, dim2=1)  # batch, step
                 else:
                     scores = torch.diagonal(scores, dim1=1, dim2=3).permute([0, 2, 1])  # data_batch, step, target_batch
-                    score_sum = torch.sum(scores, dim=0).permute([1, 0])
+                    score_sum = torch.sum(scores, dim=0).permute([1, 0])  # target_batch, step
                     valid_scores = torch.diagonal(scores, dim1=0, dim2=2).permute([1, 0])  # batch, step
 
                 loss_logits = torch.log(valid_scores / score_sum)  # batch, step
@@ -136,9 +136,14 @@ class ContrastiveEstimationTrainer:
 
         total_prediction_losses = torch.zeros(self.prediction_steps, requires_grad=False).to(device=self.device)
         total_accurate_predictions = torch.zeros(self.prediction_steps, requires_grad=False).to(device=self.device)
-        n = batch_size * self.prediction_steps
+        n = batch_size
+        if self.sum_score_over_timesteps:
+            n *= self.prediction_steps
         prediction_template = torch.arange(0, n, dtype=torch.long).to(device=self.device)
-        prediction_template = prediction_template.view(batch_size, self.prediction_steps)
+        if self.sum_score_over_timesteps:
+            prediction_template = prediction_template.view(batch_size, self.prediction_steps)
+        else:
+            prediction_template = prediction_template.unsqueeze(1).repeat(1, self.prediction_steps)
         #prediction_template_batch = torch.arange(0, batch_size, dtype=torch.long).unsqueeze(0)
         #prediction_template_batch = prediction_template_batch.repeat(self.prediction_steps, 1).to(device=self.device)
         #prediction_template_step = torch.arange(0, self.prediction_steps, dtype=torch.long).unsqueeze(1)
@@ -166,13 +171,13 @@ class ContrastiveEstimationTrainer:
                 valid_scores = torch.diagonal(valid_scores, dim1=0, dim2=1)  # batch, step
             else:
                 scores = torch.diagonal(scores, dim1=1, dim2=3).permute([0, 2, 1])  # data_batch, step, target_batch
-                score_sum = torch.sum(scores, dim=0).permute([1, 0])
+                score_sum = torch.sum(scores, dim=0).permute([1, 0])  # target_batch, step
                 valid_scores = torch.diagonal(scores, dim1=0, dim2=2).permute([1, 0])  # batch, step
 
             loss_logits = torch.log(valid_scores / score_sum)  # batch, step
 
             # calculate prediction accuracy as the proportion of scores that are highest for the correct target
-            max_score = torch.argmax(scores.view(batch_size, self.prediction_steps, -1), dim=2)
+            max_score = torch.argmax(scores.view(batch_size, self.prediction_steps, -1), dim=2)  # batch, step
             correctly_predicted = torch.eq(prediction_template, max_score)
             prediction_accuracy = torch.sum(correctly_predicted, dim=0).type_as(batch) / n
 
