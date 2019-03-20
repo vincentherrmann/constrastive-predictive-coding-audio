@@ -85,7 +85,7 @@ class ContrastiveEstimationTrainer:
                     print("nan loss")
                     print("scores:", scores)
                     print("mean target:", torch.mean(targets).item())
-                    print("mean prediction:", torch.mean(predictions).item())
+                    print("mean prediction:", torch.mean(predicted_z).item())
                     print("mean score:", torch.mean(scores).item())
                     print("mean score sum:", torch.mean(score_sum).item())
                     print("ratio:", torch.mean(score_sum).item() / torch.mean(scores).item())
@@ -93,7 +93,7 @@ class ContrastiveEstimationTrainer:
                     return
                 elif self.training_step % 20 == 0 and self.print_out_scores:
                     print("mean target:", torch.mean(targets).item())
-                    print("mean prediction:", torch.mean(predictions).item())
+                    print("mean prediction:", torch.mean(predicted_z).item())
                     print("mean score:", torch.mean(scores).item())
                     print("mean score sum:", torch.mean(score_sum).item())
                     print("ratio:", torch.mean(score_sum).item() / torch.mean(scores).item())
