@@ -138,7 +138,10 @@ class ContrastiveEstimationTrainer:
         total_accurate_predictions = torch.zeros(self.prediction_steps, requires_grad=False).to(device=self.device)
         n = batch_size
         if self.sum_score_over_timesteps:
+            print("sum over time steps")
             n *= self.prediction_steps
+        else:
+            print("do not sum over time steps")
         prediction_template = torch.arange(0, n, dtype=torch.long).to(device=self.device)
         if self.sum_score_over_timesteps:
             prediction_template = prediction_template.view(batch_size, self.prediction_steps)
