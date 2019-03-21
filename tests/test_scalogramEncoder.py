@@ -123,25 +123,25 @@ class TestScalogramEncoder(TestCase):
     def test_resnet(self):
         args_dict = scalogram_encoder_resnet_dict
         encoder = ScalogramResidualEncoder(args_dict)
-        visible_steps = 61
+        visible_steps = 62
         print(encoder)
         print("receptive field:", encoder.receptive_field)
 
         # test_run
-        test_result = encoder(torch.rand(3, 1, encoder.receptive_field//8 + 62*encoder.downsampling_factor))
+        #test_result = encoder(torch.rand(3, 1, encoder.receptive_field//8 + 62*encoder.downsampling_factor))
 
-        #ar_model = ConvArModel(in_channels=256, conv_channels=256, out_channels=256)
-        #pc_model = AudioPredictiveCodingModel(encoder, ar_model, enc_size=256, ar_size=256, prediction_steps=16)
-        #item_length = encoder.receptive_field + (
-        #            visible_steps + pc_model.prediction_steps) * encoder.downsampling_factor
-        #dataset = AudioDataset(
-        #    location='/Users/vincentherrmann/Documents/Projekte/Immersions/MelodicProgressiveHouse_Tracks_test',
-        #    item_length=item_length)
-        #visible_length = encoder.receptive_field + (visible_steps - 1) * encoder.downsampling_factor
-        #prediction_length = encoder.receptive_field + (pc_model.prediction_steps - 1) * encoder.downsampling_factor
-        #trainer = ContrastiveEstimationTrainer(model=pc_model,
-        #                                       dataset=dataset,
-        #                                       visible_length=visible_length,
-        #                                       prediction_length=prediction_length)
-        #trainer.train(8)
+        ar_model = ConvArModel(in_channels=256, conv_channels=256, out_channels=256)
+        pc_model = AudioPredictiveCodingModel(encoder, ar_model, enc_size=256, ar_size=256, prediction_steps=16, visible_steps=visible_steps)
+        item_length = encoder.receptive_field + (
+                    visible_steps + pc_model.prediction_steps) * encoder.downsampling_factor
+        dataset = AudioDataset(
+            location='/Users/vincentherrmann/Documents/Projekte/Immersions/MelodicProgressiveHouse_Tracks_test',
+            item_length=item_length)
+        visible_length = encoder.receptive_field + (visible_steps - 1) * encoder.downsampling_factor
+        prediction_length = encoder.receptive_field + (pc_model.prediction_steps - 1) * encoder.downsampling_factor
+        trainer = ContrastiveEstimationTrainer(model=pc_model,
+                                               dataset=dataset,
+                                               visible_length=visible_length,
+                                               prediction_length=prediction_length)
+        trainer.train(8)
 
