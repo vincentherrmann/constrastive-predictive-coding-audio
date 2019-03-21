@@ -58,7 +58,7 @@ class TestContrastiveEstimationTrainer(TestCase):
                                                     validation_set=self.dataset,
                                                     visible_length=visible_length,
                                                     prediction_length=prediction_length)
-        self.trainer.sum_score_over_timesteps = True
+        self.trainer.sum_score_over_timesteps = False
         tic = time.time()
         losses, accuracies, mean_score, mmi_lb = self.trainer.validate(batch_size=16, max_steps=20, num_workers=4)
         toc = time.time()

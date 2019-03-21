@@ -43,6 +43,7 @@ scalogram_encoder_stride_dict['kernel_sizes'] = [(5, 5), (64, 1), (5, 5), (32, 1
 scalogram_encoder_stride_dict['top_padding'] = [0, 63, 0, 0, 0, 0]
 scalogram_encoder_stride_dict['pooling'] = [1, 1, 1, 1, 1, 1]
 scalogram_encoder_stride_dict['stride'] = [2, 1, 2, 1, 1, 1]
+scalogram_encoder_stride_dict['padding'] = [0, 0, 0, 0, 0, 0]
 
 # 500 x 256 -> (5, 5) with stride 2      2  256000
 # 248 x 126 -> (64, 1) with 63 padding  32  999936
@@ -153,6 +154,55 @@ class ScalogramEncoder(nn.Module):
         return x.squeeze(2)
 
 
+scalogram_encoder_resnet_dict = scalogram_encoder_default_dict.copy()
+scalogram_encoder_resnet_dict['channel_count'] = [1, 32, 32, 64, 64,
+                                                  64, 64, 128, 128,
+                                                  128, 128, 256, 256,
+                                                  256, 256]
+scalogram_encoder_resnet_dict['kernel_sizes'] = [(3, 3), (3, 3), (3, 3), (64, 1),
+                                                 (3, 3), (3, 3), (3, 3), (30, 1),
+                                                 (3, 3), (3, 3), (3, 3), (15, 1),
+                                                 (3, 3), (3, 3)]
+scalogram_encoder_resnet_dict['top_padding'] = [0, 0, 0, 63,
+                                                0, 0, 0, 0,
+                                                0, 0, 0, 0,
+                                                0, 0]
+scalogram_encoder_resnet_dict['padding'] = [1, 1, 1, 0,
+                                            1, 0, 1, 0,
+                                            1, 1, 1, 0,
+                                            1, 0]
+scalogram_encoder_resnet_dict['pooling'] = [1, 1, 1, 1,
+                                            1, 1, 1, 1,
+                                            1, 1, 1, 1,
+                                            1, 1]
+scalogram_encoder_resnet_dict['stride'] =  [1, 1, 2, 1,
+                                            1, 1, 2, 1,
+                                            1, 1, 2, 1,
+                                            1, 1]
+
+
+# 500 x 256 -> (3, 3)                           32
+# 500 x 256 -> (3, 3)                           32
+
+# 500 x 256 -> (3, 3)   with stride 2           64
+# 250 x 128 -> (64, 1)  with 63 top padding     64
+
+# 250 x 128 -> (3, 3)                           64
+# 250 x 128 -> (3, 3)   no padding
+
+# 248 x 126 -> (3, 3)   with stride 2           128
+# 124 x  63 -> (30, 1)  no padding
+
+# 124 x  34 -> (3, 3)                           128
+# 124 x  34 -> (3, 3)
+
+# 124 x  34 -> (3, 3)   with stride 2           256
+#  62 x  17 -> (15, 1)  no padding
+
+#  62 x   3 -> (3, 3)                           256
+#  62 x   3 -> (3, 3)   no padding
+
+
 class ScalogramEncoderBlock(nn.Module):
     def __init__(self,
                  in_channels,
@@ -164,8 +214,9 @@ class ScalogramEncoderBlock(nn.Module):
                  pooling=1,
                  stride=2,
                  top_padding=None,
+                 padding_1=0,
+                 padding_2=0,
                  separable=True,
-                 dropout=0.0,
                  residual=True):
         super().__init__()
 
@@ -181,6 +232,7 @@ class ScalogramEncoderBlock(nn.Module):
                                              out_channels=hidden_channels,
                                              kernel_size=kernel_a_size,
                                              bias=bias,
+                                             padding=padding_1,
                                              stride=stride))
 
         if pooling > 1:
@@ -194,7 +246,8 @@ class ScalogramEncoderBlock(nn.Module):
         self.main_modules.append(conv_module(in_channels=hidden_channels,
                                              out_channels=out_channels,
                                              kernel_size=kernel_b_size,
-                                             bias=bias))
+                                             bias=bias,
+                                             padding=padding_2))
 
         self.residual = residual
         if self.residual:
@@ -202,7 +255,7 @@ class ScalogramEncoderBlock(nn.Module):
 
             stride_pool = stride * pooling
             if stride_pool > 1:
-                self.residual_modules.append(nn.MaxPool2d(kernel_size=stride_pool))
+                self.residual_modules.append(nn.MaxPool2d(kernel_size=stride_pool, ceil_mode=True))
 
             if in_channels != out_channels:
                 self.residual_modules.append(nn.Conv2d(in_channels=in_channels,
@@ -213,7 +266,10 @@ class ScalogramEncoderBlock(nn.Module):
     def forward(self, x):
         original_input = x
         for m in self.main_modules:
+            print(x.shape)
+            print(m)
             x = m(x)
+        print("")
         main = x
         x = original_input
         if self.residual:
@@ -269,8 +325,9 @@ class ScalogramResidualEncoder(nn.Module):
                                                      pooling=args_dict['pooling'][2*b],
                                                      stride=args_dict['stride'][2*b],
                                                      top_padding=args_dict['top_padding'][2*b+1],
-                                                     separable=args_dict['separable'],
-                                                     dropout=args_dict['dropout']))
+                                                     padding_1=args_dict['padding'][2*b],
+                                                     padding_2=args_dict['padding'][2*b+1],
+                                                     separable=args_dict['separable']))
 
         self.receptive_field = self.cqt.conv_kernel_sizes[0]
         s = args_dict['hop_length']
