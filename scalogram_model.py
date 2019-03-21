@@ -266,10 +266,7 @@ class ScalogramEncoderBlock(nn.Module):
     def forward(self, x):
         original_input = x
         for m in self.main_modules:
-            print(x.shape)
-            print(m)
             x = m(x)
-        print("")
         main = x
         x = original_input
         if self.residual:
