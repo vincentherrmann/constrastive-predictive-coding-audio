@@ -57,12 +57,10 @@ class ContrastiveEstimationTrainer:
                                                  pin_memory=True)
         self.training_step = continue_training_at_step
 
-        prof = torch.autograd.profiler.profile(use_cuda=True, enabled=profile)
-
         for current_epoch in range(epochs):
             print("epoch", current_epoch)
             for batch in iter(dataloader):
-                with prof:
+                with torch.autograd.profiler.profile(use_cuda=True, enabled=profile) as prof:
                     batch = batch.to(device=self.device)
                     predicted_z, targets, _, _ = self.model(batch.unsqueeze(1))  # data_batch, data_step, target_batch, target_step
 
