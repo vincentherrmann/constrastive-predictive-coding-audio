@@ -43,7 +43,8 @@ class ContrastiveEstimationTrainer:
               lr=0.0001,
               continue_training_at_step=0,
               num_workers=1,
-              max_steps=None):
+              max_steps=None,
+              profile=False):
         self.model.train()
         optimizer = self.optimizer(self.model.parameters(), lr=lr)
         sampler = FileBatchSampler(index_count_per_file=self.dataset.get_example_count_per_file(),
@@ -56,66 +57,69 @@ class ContrastiveEstimationTrainer:
                                                  pin_memory=True)
         self.training_step = continue_training_at_step
 
+        prof = torch.autograd.profiler.profile(use_cuda=True, enabled=profile)
+
         for current_epoch in range(epochs):
             print("epoch", current_epoch)
             for batch in iter(dataloader):
-                batch = batch.to(device=self.device)
-                predicted_z, targets, _, _ = self.model(batch.unsqueeze(1))  # data_batch, data_step, target_batch, target_step
+                with prof:
+                    batch = batch.to(device=self.device)
+                    predicted_z, targets, _, _ = self.model(batch.unsqueeze(1))  # data_batch, data_step, target_batch, target_step
 
-                lin_scores = torch.tensordot(predicted_z, targets,
-                                             dims=([2], [1]))  # data_batch, data_step, target_batch, target_step
-                scores = F.softplus(lin_scores)
+                    lin_scores = torch.tensordot(predicted_z, targets,
+                                                 dims=([2], [1]))  # data_batch, data_step, target_batch, target_step
+                    scores = F.softplus(lin_scores)
 
-                if self.sum_score_over_timesteps:
-                    score_sum = torch.sum(scores.view(-1, batch_size, self.prediction_steps),
-                                          dim=0)  # target_batch, target_step
-                    valid_scores = torch.diagonal(scores, dim1=0, dim2=2)  # data_step, target_step, batch
-                    valid_scores = torch.diagonal(valid_scores, dim1=0, dim2=1)  # batch, step
-                else:
-                    scores = torch.diagonal(scores, dim1=1, dim2=3).permute([0, 2, 1])  # data_batch, step, target_batch
-                    score_sum = torch.sum(scores, dim=0).permute([1, 0])  # target_batch, step
-                    valid_scores = torch.diagonal(scores, dim1=0, dim2=2).permute([1, 0])  # batch, step
+                    if self.sum_score_over_timesteps:
+                        score_sum = torch.sum(scores.view(-1, batch_size, self.prediction_steps),
+                                              dim=0)  # target_batch, target_step
+                        valid_scores = torch.diagonal(scores, dim1=0, dim2=2)  # data_step, target_step, batch
+                        valid_scores = torch.diagonal(valid_scores, dim1=0, dim2=1)  # batch, step
+                    else:
+                        scores = torch.diagonal(scores, dim1=1, dim2=3).permute([0, 2, 1])  # data_batch, step, target_batch
+                        score_sum = torch.sum(scores, dim=0).permute([1, 0])  # target_batch, step
+                        valid_scores = torch.diagonal(scores, dim1=0, dim2=2).permute([1, 0])  # batch, step
 
-                loss_logits = torch.log(valid_scores / score_sum)  # batch, step
+                    loss_logits = torch.log(valid_scores / score_sum)  # batch, step
 
-                prediction_losses = -torch.mean(loss_logits, dim=1)
-                loss = torch.mean(prediction_losses)
+                    prediction_losses = -torch.mean(loss_logits, dim=1)
+                    loss = torch.mean(prediction_losses)
 
-                if torch.sum(torch.isnan(loss)).item() > 0.:
-                    print("nan loss")
-                    print("scores:", scores)
-                    print("mean target:", torch.mean(targets).item())
-                    print("mean prediction:", torch.mean(predicted_z).item())
-                    print("mean score:", torch.mean(scores).item())
-                    print("mean score sum:", torch.mean(score_sum).item())
-                    print("ratio:", torch.mean(score_sum).item() / torch.mean(scores).item())
-                    print("returned with nan loss at step", self.training_step)
-                    return
-                elif self.training_step % 20 == 0 and self.print_out_scores:
-                    print("mean target:", torch.mean(targets).item())
-                    print("mean prediction:", torch.mean(predicted_z).item())
-                    print("mean score:", torch.mean(scores).item())
-                    print("mean score sum:", torch.mean(score_sum).item())
-                    print("ratio:", torch.mean(score_sum).item() / torch.mean(scores).item())
+                    if torch.sum(torch.isnan(loss)).item() > 0.:
+                        print("nan loss")
+                        print("scores:", scores)
+                        print("mean target:", torch.mean(targets).item())
+                        print("mean prediction:", torch.mean(predicted_z).item())
+                        print("mean score:", torch.mean(scores).item())
+                        print("mean score sum:", torch.mean(score_sum).item())
+                        print("ratio:", torch.mean(score_sum).item() / torch.mean(scores).item())
+                        print("returned with nan loss at step", self.training_step)
+                        return
+                    elif self.training_step % 20 == 0 and self.print_out_scores:
+                        print("mean target:", torch.mean(targets).item())
+                        print("mean prediction:", torch.mean(predicted_z).item())
+                        print("mean score:", torch.mean(scores).item())
+                        print("mean score sum:", torch.mean(score_sum).item())
+                        print("ratio:", torch.mean(score_sum).item() / torch.mean(scores).item())
 
-                loss += self.regularization * torch.mean(torch.mean(lin_scores, dim=1)**2)  # regulate loss
-                #loss = torch.clamp(loss, 0, 5)
+                    loss += self.regularization * torch.mean(torch.mean(lin_scores, dim=1)**2)  # regulate loss
+                    #loss = torch.clamp(loss, 0, 5)
 
-                self.model.zero_grad()
-                loss.backward()
-                optimizer.step()
+                    self.model.zero_grad()
+                    loss.backward()
+                    optimizer.step()
 
-                if self.logger is not None:
-                    self.logger.loss_meter.update(loss.item())
-                    self.logger.score_meter.update(torch.max(scores).item())
-                    self.logger.log(self.training_step)
-                elif self.training_step % 1 == 0:
-                    print("loss at step step " + str(self.training_step) + ":", loss.item())
+                    if self.logger is not None:
+                        self.logger.loss_meter.update(loss.item())
+                        self.logger.score_meter.update(torch.max(scores).item())
+                        self.logger.log(self.training_step)
+                    elif self.training_step % 1 == 0:
+                        print("loss at step step " + str(self.training_step) + ":", loss.item())
 
-                self.training_step += 1
+                    self.training_step += 1
 
-                if max_steps is not None and self.training_step >= max_steps:
-                    return
+                    if max_steps is not None and self.training_step >= max_steps:
+                        return prof
 
     def validate(self, batch_size=64, num_workers=1, max_steps=None):
         if self.validation_set is None:
