@@ -86,27 +86,20 @@ class ConvArModel(nn.Module):
         # 21
         # 11
 
-        # 62
-        # 54
-        # 27
-        # 19
-        # 10
-        #  2
-
         super().__init__()
         self.module_list = nn.ModuleList()
         channel_count = in_channels
         for l in range(len(kernel_sizes)):
             self.module_list.append(nn.Conv1d(in_channels=channel_count,
                                               out_channels=conv_channels,
-                                              kernel_size=kernel_sizes[l],
+                                              kernel_size=1, #kernel_sizes[l],
                                               bias=bias))
             channel_count = conv_channels
-            #self.module_list.append(nn.Conv1d(in_channels=channel_count,
-            #                                  out_channels=channel_count,
-            #                                  kernel_size=kernel_sizes[l],
-            #                                  groups=channel_count,
-            #                                  bias=bias))
+            self.module_list.append(nn.Conv1d(in_channels=channel_count,
+                                              out_channels=channel_count,
+                                              kernel_size=kernel_sizes[l],
+                                              groups=channel_count,
+                                              bias=bias))
             self.module_list.append(nn.ReLU())
 
             if l < len(kernel_sizes) - 1:

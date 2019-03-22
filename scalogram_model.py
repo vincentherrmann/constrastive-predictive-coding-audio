@@ -158,6 +158,10 @@ scalogram_encoder_resnet_dict = scalogram_encoder_default_dict.copy()
 scalogram_encoder_resnet_dict['channel_count'] = [1, 32, 32, 64, 64,
                                                   128, 128, 128, 128,
                                                   256, 256, 256, 256,
+                                                  512, 256]
+scalogram_encoder_resnet_dict['channel_count'] = [1, 16, 16, 32, 32,
+                                                  64, 64, 64, 64,
+                                                  128, 128, 128, 128,
                                                   256, 256]
 scalogram_encoder_resnet_dict['kernel_sizes'] = [(3, 3), (3, 3), (3, 3), (64, 1),
                                                  (3, 3), (3, 3), (3, 3), (33, 1),
@@ -199,8 +203,8 @@ scalogram_encoder_resnet_dict['stride'] =  [2, 1, 1, 1,
 #  64 x  16 -> (3, 3)                           256         310,837,248      9
 #  64 x  16 -> (16, 1)                                    1,036,124,160      7
 
-#  64 x   1 -> (3, 1)   no padding              256         109,707,264      4
-#  64 x   1 -> (3, 1)   no padding                          109,707,264      1
+#  62 x   1 -> (3, 1)   no padding              256         109,707,264      4
+#  60 x   1 -> (3, 1)   no padding                          109,707,264      1
 
 
 # 500 x 256 -> (3, 3)                           32           73,728,000     12 ms
@@ -351,6 +355,7 @@ class ScalogramResidualEncoder(nn.Module):
 
         self.receptive_field = self.cqt.conv_kernel_sizes[0]
         s = args_dict['hop_length']
+
         for i in range(len(args_dict['kernel_sizes'])):
             self.receptive_field += (args_dict['kernel_sizes'][i][1] - 1) * s
             s *= args_dict['pooling'][i] * args_dict['stride'][i]
