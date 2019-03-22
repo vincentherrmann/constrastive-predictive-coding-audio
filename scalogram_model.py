@@ -154,34 +154,60 @@ class ScalogramEncoder(nn.Module):
         return x.squeeze(2)
 
 
+#scalogram_encoder_resnet_dict = scalogram_encoder_default_dict.copy()
+#scalogram_encoder_resnet_dict['channel_count'] = [1, 32, 32, 64, 64,
+#                                                  128, 128, 128, 128,
+#                                                  256, 256, 256, 256,
+#                                                  512, 256]
+#scalogram_encoder_resnet_dict['channel_count'] = [1, 16, 16, 32, 32,
+#                                                  64, 64, 64, 64,
+#                                                  128, 128, 128, 128,
+#                                                  256, 256]
+#scalogram_encoder_resnet_dict['kernel_sizes'] = [(3, 3), (3, 3), (3, 3), (64, 1),
+#                                                 (3, 3), (3, 3), (3, 3), (33, 1),
+#                                                 (3, 3), (3, 3), (3, 3), (16, 1),
+#                                                 (1, 3), (1, 3)]
+#scalogram_encoder_resnet_dict['top_padding'] = [0, 0, 0, 63,
+#                                                0, 0, 0, 0,
+#                                                0, 0, 0, 0,
+#                                                0, 0]
+#scalogram_encoder_resnet_dict['padding'] = [1, 1, 1, 0,
+#                                            1, 1, 1, 0,
+#                                            1, 1, 1, 0,
+#                                            0, 0]
+#scalogram_encoder_resnet_dict['pooling'] = [1, 1, 1, 1,
+#                                            1, 1, 1, 1,
+#                                            1, 1, 1, 1,
+#                                            1, 1]
+#scalogram_encoder_resnet_dict['stride'] =  [2, 1, 1, 1,
+#                                            2, 1, 1, 1,
+#                                            2, 1, 1, 1,
+#                                            1, 1]
+
 scalogram_encoder_resnet_dict = scalogram_encoder_default_dict.copy()
 scalogram_encoder_resnet_dict['channel_count'] = [1, 32, 32, 64, 64,
-                                                  128, 128, 128, 128,
-                                                  256, 256, 256, 256,
-                                                  512, 256]
-scalogram_encoder_resnet_dict['channel_count'] = [1, 16, 16, 32, 32,
                                                   64, 64, 64, 64,
                                                   128, 128, 128, 128,
                                                   256, 256]
 scalogram_encoder_resnet_dict['kernel_sizes'] = [(3, 3), (3, 3), (3, 3), (64, 1),
-                                                 (3, 3), (3, 3), (3, 3), (33, 1),
-                                                 (3, 3), (3, 3), (3, 3), (16, 1),
-                                                 (1, 3), (1, 3)]
+                                                 (3, 3), (3, 3), (3, 3), (30, 1),
+                                                 (3, 3), (3, 3), (3, 3), (15, 1),
+                                                 (3, 3), (3, 3)]
 scalogram_encoder_resnet_dict['top_padding'] = [0, 0, 0, 63,
                                                 0, 0, 0, 0,
                                                 0, 0, 0, 0,
                                                 0, 0]
 scalogram_encoder_resnet_dict['padding'] = [1, 1, 1, 0,
+                                            1, 0, 1, 0,
                                             1, 1, 1, 0,
-                                            1, 1, 1, 0,
-                                            0, 0]
+                                            1, 0]
 scalogram_encoder_resnet_dict['pooling'] = [1, 1, 1, 1,
                                             1, 1, 1, 1,
                                             1, 1, 1, 1,
                                             1, 1]
-scalogram_encoder_resnet_dict['stride'] =  [2, 1, 1, 1,
-                                            2, 1, 1, 1,
-                                            2, 1, 1, 1,
+scalogram_encoder_resnet_dict['stride'] =  [1, 1, 2, 1,
+                                            1, 1, 2, 1,
+                                            1, 1, 2, 1,
                                             1, 1]
 
 
