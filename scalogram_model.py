@@ -185,10 +185,10 @@ class ScalogramEncoder(nn.Module):
 #                                            1, 1]
 
 scalogram_encoder_resnet_dict = scalogram_encoder_default_dict.copy()
-scalogram_encoder_resnet_dict['channel_count'] = [1, 32, 32, 64, 64,
+scalogram_encoder_resnet_dict['channel_count'] = [1, 16, 16, 32, 32,
                                                   64, 64, 64, 64,
-                                                  128, 128, 128, 128,
-                                                  256, 256]
+                                                  128, 128, 256, 256,
+                                                  512, 256]
 scalogram_encoder_resnet_dict['kernel_sizes'] = [(3, 3), (3, 3), (3, 3), (64, 1),
                                                  (3, 3), (3, 3), (3, 3), (26, 1),
                                                  (3, 3), (3, 3), (3, 3), (16, 1),

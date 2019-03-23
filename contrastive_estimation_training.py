@@ -9,7 +9,7 @@ from sklearn import svm
 
 
 class ContrastiveEstimationTrainer:
-    def __init__(self, model: AudioPredictiveCodingModel, dataset, visible_length, prediction_length, logger=None, device=None,
+    def __init__(self, model: AudioPredictiveCodingModel, dataset, logger=None, device=None,
                  use_all_GPUs=True,
                  regularization=1., validation_set=None, test_task_set=None, prediction_noise=0.01,
                  optimizer=torch.optim.Adam,
@@ -19,8 +19,6 @@ class ContrastiveEstimationTrainer:
         self.encoder = model.encoder
         self.ar_size = model.ar_size
         self.prediction_steps = self.model.prediction_steps
-        self.visible_length = visible_length
-        self.prediction_length = prediction_length
         self.dataset = dataset
         self.logger = logger
         self.device = device
