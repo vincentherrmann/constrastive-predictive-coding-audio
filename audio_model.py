@@ -86,6 +86,10 @@ class ConvArModel(nn.Module):
         # 21
         # 11
 
+        # 54 46
+        # 23 15
+        #  8  1
+
         super().__init__()
         self.module_list = nn.ModuleList()
         channel_count = in_channels
