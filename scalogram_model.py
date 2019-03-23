@@ -189,18 +189,18 @@ scalogram_encoder_resnet_dict['channel_count'] = [1, 32, 32, 64, 64,
                                                   64, 64, 64, 64,
                                                   128, 128, 128, 128,
                                                   256, 256]
-scalogram_encoder_resnet_dict['kernel_sizes'] = [(3, 3), (3, 3), (3, 3), (64, 1),
-                                                 (3, 3), (3, 3), (3, 3), (20, 1),
-                                                 (3, 3), (3, 3), (3, 3), (14, 1),
-                                                 (1, 3), (1, 3)]
+scalogram_encoder_resnet_dict['kernel_sizes'] = [(3, 3), (3, 3), (3, 3), (63, 1),
+                                                 (3, 3), (3, 3), (3, 3), (30, 1),
+                                                 (3, 3), (3, 3), (3, 3), (15, 1),
+                                                 (3, 3), (3, 3)]
 scalogram_encoder_resnet_dict['top_padding'] = [0, 0, 0, 63,
                                                 0, 0, 0, 0,
                                                 0, 0, 0, 0,
                                                 0, 0]
-scalogram_encoder_resnet_dict['padding'] = [0, 0, 0, 0,
-                                            0, 0, 0, 0,
-                                            0, 0, 0, 0,
-                                            0, 0]
+scalogram_encoder_resnet_dict['padding'] = [1, 1, 1, 0,
+                                            1, 0, 1, 0,
+                                            1, 1, 1, 0,
+                                            1, 0]
 scalogram_encoder_resnet_dict['pooling'] = [1, 1, 1, 1,
                                             1, 1, 1, 1,
                                             1, 1, 1, 1,
@@ -339,6 +339,7 @@ class ScalogramEncoderBlock(nn.Module):
                 self.residual_modules.append(nn.Conv2d(in_channels=in_channels,
                                                        out_channels=out_channels,
                                                        kernel_size=1,
+                                                       padding=padding_1+padding_2,
                                                        bias=False))
 
     def forward(self, x):
