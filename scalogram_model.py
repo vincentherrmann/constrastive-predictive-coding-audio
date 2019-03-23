@@ -190,25 +190,47 @@ scalogram_encoder_resnet_dict['channel_count'] = [1, 32, 32, 64, 64,
                                                   128, 128, 128, 128,
                                                   256, 256]
 scalogram_encoder_resnet_dict['kernel_sizes'] = [(3, 3), (3, 3), (3, 3), (64, 1),
-                                                 (3, 3), (3, 3), (3, 3), (30, 1),
-                                                 (3, 3), (3, 3), (3, 3), (15, 1),
-                                                 (3, 3), (3, 3)]
+                                                 (3, 3), (3, 3), (3, 3), (20, 1),
+                                                 (3, 3), (3, 3), (3, 3), (14, 1),
+                                                 (1, 3), (1, 3)]
 scalogram_encoder_resnet_dict['top_padding'] = [0, 0, 0, 63,
                                                 0, 0, 0, 0,
                                                 0, 0, 0, 0,
                                                 0, 0]
-scalogram_encoder_resnet_dict['padding'] = [1, 1, 1, 0,
-                                            1, 0, 1, 0,
-                                            1, 1, 1, 0,
-                                            1, 0]
+scalogram_encoder_resnet_dict['padding'] = [0, 0, 0, 0,
+                                            0, 0, 0, 0,
+                                            0, 0, 0, 0,
+                                            0, 0]
 scalogram_encoder_resnet_dict['pooling'] = [1, 1, 1, 1,
                                             1, 1, 1, 1,
                                             1, 1, 1, 1,
                                             1, 1]
-scalogram_encoder_resnet_dict['stride'] =  [1, 1, 2, 1,
-                                            1, 1, 2, 1,
-                                            1, 1, 2, 1,
+scalogram_encoder_resnet_dict['stride'] =  [2, 1, 1, 1,
+                                            2, 1, 1, 1,
+                                            2, 1, 1, 1,
                                             1, 1]
+
+# Without padding
+# 512 x 256 -> (3, 3)   with stride 2           32           18.874.368     12 ms
+# 255 x 127 -> (3, 3)                           32          301.989.888    104 ms
+
+# 253 x 125 -> (3, 3)                           64          603.979.776    102
+# 251 x 123 -> (64, 1)  with 63 top padding     64        8.589.934.592     33
+
+# 251 x 123 -> (3, 3)   with stride 2           128       1,179,648,000     47
+# 125 x  61 -> (3, 3)                                     1,179,648,000     48
+
+# 123 x  59 -> (3, 3)                           128         575,963,136     82
+# 121 x  57 -> (20, 1)                                    1,919,877,120     37
+
+# 121 x  38 -> (3, 3)   with stride 2           256         621,674,496     29
+#  60 x  18 -> (3, 3)                                       621,674,496     29
+
+#  58 x  16 -> (3, 3)                           256         310,837,248      9
+#  56 x  16 -> (16, 1)                                    1,036,124,160      7
+
+#  62 x   1 -> (3, 1)                           256         109,707,264      4
+#  60 x   1 -> (3, 1)                                       109,707,264      1
 
 
 # 512 x 256 -> (3, 3)   with stride 2           32           18.874.368     12 ms
@@ -232,27 +254,27 @@ scalogram_encoder_resnet_dict['stride'] =  [1, 1, 2, 1,
 #  62 x   1 -> (3, 1)   no padding              256         109,707,264      4
 #  60 x   1 -> (3, 1)   no padding                          109,707,264      1
 
+# This model works!:
+# 500 x 256 -> (3, 3)                           32           73,728,000     12 ms       74      28
+# 500 x 256 -> (3, 3)                           32        1,179,648,000    104 ms       74
 
-# 500 x 256 -> (3, 3)                           32           73,728,000     12 ms
-# 500 x 256 -> (3, 3)                           32        1,179,648,000    104 ms
-
-# 500 x 256 -> (3, 3)   with stride 2           64          589,824,000    102
-# 250 x 128 -> (64, 1)  with 63 top padding     64        8,388,608,000     33
+# 500 x 256 -> (3, 3)   with stride 2           64          589,824,000    102          74
+# 250 x 128 -> (64, 1)  with 63 top padding     64        8,388,608,000     33          37      14
 
 # 250 x 128 -> (3, 3)                           64        1,179,648,000     47
 # 250 x 128 -> (3, 3)   no padding                        1,179,648,000     48
 
-# 248 x 126 -> (3, 3)   with stride 2           128         575,963,136     82
-# 124 x  63 -> (30, 1)  no padding                        1,919,877,120     37
+# 248 x 126 -> (3, 3)   with stride 2           128         575,963,136     82          35      12
+# 124 x  63 -> (30, 1)  no padding                        1,919,877,120     37          18       6
 
 # 124 x  34 -> (3, 3)                           128         621,674,496     29
 # 124 x  34 -> (3, 3)                                       621,674,496     29
 
 # 124 x  34 -> (3, 3)   with stride 2           256         310,837,248      9
-#  62 x  17 -> (15, 1)  no padding                        1,036,124,160      7
+#  62 x  17 -> (15, 1)  no padding                        1,036,124,160      7           9       3
 
 #  62 x   3 -> (3, 3)                           256         109,707,264      4
-#  62 x   3 -> (3, 3)   no padding                          109,707,264      1
+#  62 x   3 -> (3, 3)   no padding                          109,707,264      1                   1
 
 
 
@@ -382,9 +404,14 @@ class ScalogramResidualEncoder(nn.Module):
         self.receptive_field = self.cqt.conv_kernel_sizes[0]
         s = args_dict['hop_length']
 
+        #s=1
+        #self.receptive_field = 1
+        #_receptive_fields = []
+
         for i in range(len(args_dict['kernel_sizes'])):
             self.receptive_field += (args_dict['kernel_sizes'][i][1] - 1) * s
             s *= args_dict['pooling'][i] * args_dict['stride'][i]
+            #_receptive_fields.append(self.receptive_field)
 
         self.downsampling_factor = args_dict['hop_length'] * np.prod(args_dict['pooling']) * np.prod(
             args_dict['stride'])
@@ -406,7 +433,7 @@ class ScalogramResidualEncoder(nn.Module):
             if i < len(self.blocks)-1:
                 x = F.relu(x)
             #print("shape after module", i, " - ", x.shape)
-        return x.squeeze(2)
+        return x[:, :, 0, :]
 
 
 

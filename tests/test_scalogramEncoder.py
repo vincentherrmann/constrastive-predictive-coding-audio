@@ -128,7 +128,11 @@ class TestScalogramEncoder(TestCase):
         print("receptive field:", encoder.receptive_field)
 
         # test_run
-        #test_result = encoder(torch.rand(3, 1, encoder.receptive_field//8 + 62*encoder.downsampling_factor))
+        tic = time.time()
+        test_result = encoder(torch.rand(16, 1, encoder.receptive_field + 1*encoder.downsampling_factor))
+        print("encoder time:", time.time() - tic)
+
+        return
 
         ar_model = ConvArModel(in_channels=256, conv_channels=256, out_channels=256)
         pc_model = AudioPredictiveCodingModel(encoder, ar_model, enc_size=256, ar_size=256, prediction_steps=16, visible_steps=visible_steps)
