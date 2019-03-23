@@ -76,7 +76,7 @@ class AudioGRUModel(nn.Module):
 
 
 class ConvArModel(nn.Module):
-    def __init__(self, kernel_sizes=[5, 5, 5], in_channels=512, conv_channels=256, out_channels=256, bias=True, batch_norm=False,
+    def __init__(self, kernel_sizes=[9, 9, 9], in_channels=512, conv_channels=256, out_channels=256, bias=True, batch_norm=False,
                  dropout=0.0):
         # 118
         # 110
@@ -96,10 +96,10 @@ class ConvArModel(nn.Module):
         for l in range(len(kernel_sizes)):
             self.module_list.append(nn.Conv1d(in_channels=channel_count,
                                               out_channels=conv_channels,
-                                              kernel_size=kernel_sizes[l],
+                                              kernel_size=1, #kernel_sizes[l],
                                               bias=bias))
             channel_count = conv_channels
-            self.module_list.append(nn.ReLU())
+            #self.module_list.append(nn.ReLU())
             self.module_list.append(nn.Conv1d(in_channels=channel_count,
                                               out_channels=channel_count,
                                               kernel_size=kernel_sizes[l],
