@@ -205,10 +205,11 @@ scalogram_encoder_resnet_dict['pooling'] = [1, 1, 1, 1,
                                             1, 1, 1, 1,
                                             1, 1, 1, 1,
                                             1, 1]
-scalogram_encoder_resnet_dict['stride'] =  [1, 2, 1, 1,
-                                            1, 2, 1, 1,
-                                            1, 2, 1, 1,
+scalogram_encoder_resnet_dict['stride'] =  [1, 1, 2, 1,
+                                            1, 1, 2, 1,
+                                            1, 1, 2, 1,
                                             1, 1]
+
 
 # Without padding
 # 512 x 256 -> (3, 3)   with stride 2           32           18.874.368     12 ms
