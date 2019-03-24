@@ -86,9 +86,9 @@ class ConvArModel(nn.Module):
         # 21
         # 11
 
-        # 60 56 52
-        # 26 22 18
-        #  9  5
+        # 60 56 52  # 60 62
+        # 26 22 18  # 31 23
+        #  9  5     # 12  4
 
         super().__init__()
         self.module_list = nn.ModuleList()
