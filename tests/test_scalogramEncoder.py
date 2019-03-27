@@ -9,6 +9,7 @@ import time
 import torch.nn as nn
 
 from matplotlib import pyplot as plt
+from configs.scalogram_resnet_configs import *
 
 
 class TestScalogramEncoder(TestCase):
@@ -148,4 +149,68 @@ class TestScalogramEncoder(TestCase):
                                                dataset=dataset)
         trainer.train(8, max_steps=1)
         print("finished")
+
+    def test_resnet_architecture(self):
+        block_1 = default_encoder_block_dict.copy()     #   1 x 500 x 256
+        block_1['in_channels'] = 1                      #  32 x 500 x 256
+        block_1['out_channels'] = 32                    #  32 x 500 x 256
+        block_1['padding_1'] = 1
+        block_1['padding_2'] = 1
+
+        block_2 = default_encoder_block_dict.copy()            #  32 x 500 x 256
+        block_2['in_channels'] = 32                     #
+        block_2['out_channels'] = 64
+        block_2['kernel_size_2'] = (64, 1)
+        block_2['padding_1'] = 1
+        block_2['stride_1'] = 2
+        block_2['top_padding_2'] = 63
+
+        block_3 = default_encoder_block_dict.copy()
+        block_3['in_channels'] = 64
+        block_3['out_channels'] = 64
+        block_3['padding_1'] = 1
+
+        block_4 = default_encoder_block_dict.copy()
+        block_4['in_channels'] = 64
+        block_4['out_channels'] = 128
+        block_4['kernel_size_2'] = (30, 1)
+        block_4['padding_1'] = 1
+        block_4['stride_1'] = 2
+
+        block_5 = default_encoder_block_dict.copy()
+        block_5['in_channels'] = 128
+        block_5['out_channels'] = 128
+        block_5['padding_1'] = 1
+        block_5['padding_2'] = 1
+
+        block_6 = default_encoder_block_dict.copy()
+        block_6['in_channels'] = 128
+        block_6['out_channels'] = 256
+        block_6['kernel_size_2'] = (15, 1)
+        block_6['padding_1'] = 1
+        block_6['stride_1'] = 2
+
+        block_7 = default_encoder_block_dict.copy()
+        block_7['in_channels'] = 256
+        block_7['out_channels'] = 256
+        block_7['padding_1'] = 1
+        block_7['padding_2'] = 0
+
+        args_dict = scalogram_encoder_resnet_dict
+        args_dict['blocks'] = [block_1,
+                               block_2,
+                               block_3,
+                               block_4,
+                               block_5,
+                               block_6,
+                               block_7]
+
+        encoder = ScalogramResidualEncoder(args_dict=scalogram_resnet_architecture_1, verbose=2)
+        tic = time.time()
+        test_result = encoder(torch.rand(1, 1, encoder.receptive_field + 60*encoder.downsampling_factor))
+        print("encoder time:", time.time() - tic)
+
+
+
+
 

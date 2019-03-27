@@ -14,7 +14,7 @@ class ContrastiveEstimationTrainer:
                  regularization=1., validation_set=None, test_task_set=None, prediction_noise=0.01,
                  optimizer=torch.optim.Adam,
                  file_batch_size=1,
-                 sum_score_over_timesteps=False):
+                 score_over_all_timesteps=False):
         self.model = model
         self.encoder = model.encoder
         self.ar_size = model.ar_size
@@ -33,7 +33,7 @@ class ContrastiveEstimationTrainer:
         self.prediction_noise = prediction_noise
         self.optimizer = optimizer
         self.file_batch_size = file_batch_size
-        self.sum_score_over_timesteps = sum_score_over_timesteps
+        self.score_over_all_timesteps = score_over_all_timesteps
 
     def train(self,
               batch_size=32,
@@ -66,7 +66,7 @@ class ContrastiveEstimationTrainer:
                                                  dims=([2], [1]))  # data_batch, data_step, target_batch, target_step
                     scores = F.softplus(lin_scores)
 
-                    if self.sum_score_over_timesteps:
+                    if self.score_over_all_timesteps:
                         score_sum = torch.sum(scores.view(-1, batch_size, self.prediction_steps),
                                               dim=0)  # target_batch, target_step
                         valid_scores = torch.diagonal(scores, dim1=0, dim2=2)  # data_step, target_step, batch
@@ -137,13 +137,13 @@ class ContrastiveEstimationTrainer:
         total_prediction_losses = torch.zeros(self.prediction_steps, requires_grad=False).to(device=self.device)
         total_accurate_predictions = torch.zeros(self.prediction_steps, requires_grad=False).to(device=self.device)
         n = batch_size
-        if self.sum_score_over_timesteps:
+        if self.score_over_all_timesteps:
             print("sum over time steps")
             n *= self.prediction_steps
         else:
             print("do not sum over time steps")
         prediction_template = torch.arange(0, n, dtype=torch.long).to(device=self.device)
-        if self.sum_score_over_timesteps:
+        if self.score_over_all_timesteps:
             prediction_template = prediction_template.view(batch_size, self.prediction_steps)
         else:
             prediction_template = prediction_template.unsqueeze(1).repeat(1, self.prediction_steps)
@@ -167,7 +167,7 @@ class ContrastiveEstimationTrainer:
                                          dims=([2], [1]))  # data_batch, data_step, target_batch, target_step
             scores = F.softplus(lin_scores)  # data_batch, data_step, target_batch, target_step
 
-            if self.sum_score_over_timesteps:
+            if self.score_over_all_timesteps:
                 score_sum = torch.sum(scores.view(-1, batch_size, self.prediction_steps),
                                       dim=0)  # target_batch, target_step
                 valid_scores = torch.diagonal(scores, dim1=0, dim2=2)  # data_step, target_step, batch

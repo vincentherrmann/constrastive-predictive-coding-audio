@@ -3,6 +3,8 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 
+from configs.autoregressive_model_configs import *
+
 encoder_default_dict = {'strides': [5, 4, 2, 2, 2],
                         'kernel_sizes': [10, 8, 4, 4, 4],
                         'channel_count': [512, 512, 512, 512, 512],
@@ -119,6 +121,32 @@ class ConvArModel(nn.Module):
                                           out_channels=out_channels,
                                           kernel_size=1,
                                           bias=bias))
+
+    def forward(self, x):
+        for m in self.module_list:
+            x = m(x)
+        return x[:, :, -1]
+
+
+class ConvolutionalArModel(nn.Module):
+    def __init__(self, args_dict=ar_conv_default_dict):
+        super().__init__()
+        self.module_list = nn.ModuleList()
+        for l in range(len(args_dict['kernel_sizes'])):
+            pooling = args_dict['pooling'][l]
+            if pooling > 1:
+                self.module_list.append(nn.MaxPool1d(2, ceil_mode=True))
+
+            self.module_list.append(nn.Conv1d(in_channels=args_dict['channels_count'][l],
+                                              out_channels=args_dict['channels_count'][l+1],
+                                              kernel_size=args_dict['kernel_size'][l],
+                                              stride=args_dict['stride'][l]))
+
+            if l < len(args_dict['kernel_sizes']) - 1:
+                self.module_list.append(nn.ReLU())
+
+        self.encoding_size = args_dict['channels_count'][0]
+        self.ar_size = args_dict['channels_count'][-1]
 
     def forward(self, x):
         for m in self.module_list:
