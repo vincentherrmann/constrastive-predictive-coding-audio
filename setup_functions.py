@@ -1,6 +1,7 @@
 from audio_dataset import *
 from audio_model import *
 from contrastive_estimation_training import *
+from classification_training import *
 from scalogram_model import *
 from configs.scalogram_resnet_configs import *
 from configs.cqt_configs import *
@@ -8,6 +9,7 @@ from configs.autoregressive_model_configs import *
 from configs.contrastive_estimation_configs import *
 from configs.dataset_configs import *
 from configs.snapshot_configs import *
+from configs.classification_training_configs import *
 from torch import autograd
 from ml_utilities.train_logging import *
 from ml_utilities.colab_utilities import *
@@ -67,25 +69,32 @@ def setup_model(cqt_params=cqt_default_dict,
                 ar_params=ar_conv_default_dict,
                 visible_steps=60,
                 prediction_steps=16):
-    encoder = encoder_params['model'](cqt_dict=cqt_params,
-                                      args_dict=encoder_params)
+    preprocessing_module = PreprocessingModule(cqt_dict=cqt_params,
+                                               phase=encoder_params['phase'])
+    encoder = encoder_params['model'](args_dict=encoder_params,
+                                      preprocessing_module=preprocessing_module)
     ar_model = ar_params['model'](args_dict=ar_params)
     pc_model = AudioPredictiveCodingModel(encoder=encoder,
                                           autoregressive_model=ar_model,
                                           enc_size=ar_model.encoding_size,
-                                          ar_size=ar_model.ar_code_size,
+                                          ar_size=ar_model.ar_size,
                                           visible_steps=visible_steps,
                                           prediction_steps=prediction_steps)
-    return pc_model
+    return pc_model, preprocessing_module
 
 
 def setup_snapshot_manager(model,
                            args_dict=snapshot_manager_default_dict,
                            try_proceeding=True):
-    gcs_manager = GCSManager(args_dict['gcs_project'],
-                             args_dict['gcs_bucket'])
+    try:
+        gcs_manager = GCSManager(args_dict['gcs_project'],
+                                 args_dict['gcs_bucket'])
+    except:
+        gcs_manager = None
+        print("Unable to setup GCS manager")
     snapshot_manager = SnapshotManager(model,
                                        gcs_manager,
+                                       name=args_dict['name'],
                                        snapshot_location=args_dict['snapshot_location'],
                                        logs_location=args_dict['logs_location'],
                                        gcs_snapshot_location=args_dict['gcs_snapshot_location'],
@@ -98,17 +107,28 @@ def setup_snapshot_manager(model,
             continue_training_at_step = int(newest_snapshot.split('_')[-1])
             print("loaded", newest_snapshot)
             print("continue training at step", continue_training_at_step)
+            model = pc_model
         except:
             print("no previous snapshot found, starting training from scratch")
 
     return model, snapshot_manager, continue_training_at_step
 
 
-def setup_trainer(model,
-                  snapshot_manager,
-                  dataset_args=melodic_progressive_house_default_dict,
-                  trainer_args=contrastive_estimation_default_dict,
-                  dev='cpu'):
+def setup_classification_model(cqt_params=cqt_default_dict,
+                               model_params=scalogram_resnet_classification_1):
+    preprocessing_module = PreprocessingModule(cqt_dict=cqt_params,
+                                               phase=model_params['phase'])
+    model = model_params['model'](args_dict=model_params,
+                                  preprocessing_module=preprocessing_module)
+    return model, preprocessing_module
+
+
+def setup_ce_trainer(model,
+                     snapshot_manager,
+                     preprocessing_module=None,
+                     dataset_args=melodic_progressive_house_default_dict,
+                     trainer_args=contrastive_estimation_default_dict,
+                     dev='cpu'):
     item_length = model.encoder.receptive_field
     item_length += (model.visible_steps + model.prediction_steps) * model.encoder.downsampling_factor
 
@@ -130,20 +150,64 @@ def setup_trainer(model,
                                            dataset=training_set,
                                            validation_set=validation_set,
                                            test_task_set=task_set,
+                                           optimizer=trainer_args['optimizer'],
                                            regularization=trainer_args['regularization'],
                                            prediction_noise=trainer_args['prediction_noise'],
                                            file_batch_size=trainer_args['file_batch_size'],
-                                           score_over_all_timesteps=trainer_args['score_over_all_timestamps'],
-                                           device=dev)
+                                           score_over_all_timesteps=trainer_args['score_over_all_timesteps'],
+                                           score_function=trainer_args['score_function'],
+                                           device=dev,
+                                           wasserstein_gradient_penalty=trainer_args['wasserstein_gradient_penalty'],
+                                           gradient_penalty_factor=trainer_args['gradient_penalty_factor'],
+                                           preprocessing=preprocessing_module)
+
+    if trainer_args['wasserstein_gradient_penalty']:
+        preprocessing_module.output_requires_grad = True
 
     logger = CPCLogger(trainer=trainer,
                        log_interval=trainer_args['log_interval'],
                        validation_interval=trainer_args['validation_interval'],
+                       validation_batch_size=trainer_args['validate_batch_size'],
+                       max_validation_steps=trainer_args['max_validation_steps'],
                        snapshot_function=snapshot_manager.make_snapshot,
                        snapshot_interval=trainer_args['snapshot_interval'],
                        background_function=lambda _: snapshot_manager.upload_latest_files(),
-                       background_interval=trainer_args['snapshot_interval'])
+                       background_interval=trainer_args['snapshot_interval'],
+                       log_directory=snapshot_manager.current_tb_location)
     logger.validation_function = logger.extended_validation_function
+    trainer.logger = logger
+
+    return trainer
+
+
+def setup_classification_trainer(model,
+                                 snapshot_manager,
+                                 preprocessing_module=None,
+                                 dataset_args=melodic_progressive_house_default_dict,
+                                 trainer_args=classification_training_default_dict,
+                                 dev='cpu'):
+    dataset = AudioTestingDataset(dataset_args['training_set'],
+                                  item_length=model.receptive_field + model.downsampling_factor,
+                                  unique_length=trainer_args['unique_length'])
+
+    trainer = ClassificationTrainer(model=model,
+                                    dataset=dataset,
+                                    device=dev,
+                                    optimizer=trainer_args['optimizer'],
+                                    preprocessing=preprocessing_module,
+                                    validation_split=trainer_args['validation_split'])
+
+    logger = TensorboardLogger(log_interval=trainer_args['log_interval'],
+                               validation_interval=trainer_args['validation_interval'],
+                               snapshot_function=snapshot_manager.make_snapshot,
+                               snapshot_interval=trainer_args['snapshot_interval'],
+                               background_function=lambda _: snapshot_manager.upload_latest_files(),
+                               background_interval=trainer_args['snapshot_interval'],
+                               log_directory=snapshot_manager.current_tb_location)
+
+    logger.validation_function = lambda: trainer.validate(batch_size=trainer_args['train_batch_size'],
+                                                          num_workers=8,
+                                                          max_steps=trainer_args['max_validation_steps'])
     trainer.logger = logger
 
     return trainer

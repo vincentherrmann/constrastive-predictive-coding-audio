@@ -7,7 +7,6 @@ from scipy.special import gamma
 
 from constant_q_transform import *
 
-
 scalogram_encoder_default_dict = {'kernel_sizes': [(127, 1), (5, 5), (63, 1), (5, 5), (26, 1), (5, 5)],
                                   'top_padding': [126, 0, 0, 0, 0, 0],
                                   'channel_count': [1, 32, 32, 64, 128, 256, 512],
@@ -29,6 +28,56 @@ cqt_default_dict = {'sample_rate': 16000,
                     'filter_scale': 0.5,
                     'hop_length': 128,
                     'trainable_cqt': False}
+
+
+class PreprocessingModule(nn.Module):
+    def __init__(self, cqt_dict=None, phase=False, output_requires_grad=False):
+        super().__init__()
+        self.downsampling_factor = 1
+        self.receptive_field = 1
+        self.cqt = None
+        if cqt_dict is not None:
+            self.cqt = CQT(sr=cqt_dict['sample_rate'],
+                           fmin=cqt_dict['fmin'],
+                           n_bins=cqt_dict['n_bins'],
+                           bins_per_octave=cqt_dict['bins_per_octave'],
+                           filter_scale=cqt_dict['filter_scale'],
+                           hop_length=cqt_dict['hop_length'],
+                           trainable=cqt_dict['trainable_cqt'])
+            self.downsampling_factor = cqt_dict['hop_length']
+            self.receptive_field = self.cqt.conv_kernel_sizes[0]
+
+        self.phase_diff = None
+        if phase:
+            self.phase_diff = PhaseDifference(sr=cqt_dict['sample_rate'],
+                                              fmin=cqt_dict['fmin'],
+                                              n_bins=cqt_dict['n_bins'],
+                                              bins_per_octave=cqt_dict['bins_per_octave'],
+                                              hop_length=cqt_dict['hop_length'])
+
+        #self.output_requires_grad = output_requires_grad
+        self.output = None
+
+    def forward(self, x):
+        if self.cqt is None:
+            return x
+        else:
+            x = self.cqt(x)
+
+        if self.phase_diff is not None:
+            amp = torch.pow(abs(x[:, :, 1:]), 2)
+            amp = torch.log(amp + 1e-9)
+            phi = self.phase_diff(angle(x))
+            x = torch.stack([amp, phi], dim=1)
+        else:
+            x = torch.pow(abs(x), 2)
+            x = torch.log(x + 1e-9).unsqueeze(1)
+
+        #if self.output_requires_grad:
+        #    x.requires_grad = True
+        #    x.retain_grad()
+        self.output = x
+        return x
 
 # 500 x 256 -> (127, 1) with 126 padding
 # 500 x 256 -> (5, 5)
@@ -294,7 +343,8 @@ default_encoder_block_dict = {'in_channels': 64,
                               'pooling_2': 1,
                               'bias': True,
                               'separable': False,
-                              'residual': True}
+                              'residual': True,
+                              'batch_norm': False}
 
 
 class ScalogramEncoderBlock(nn.Module):
@@ -321,6 +371,9 @@ class ScalogramEncoderBlock(nn.Module):
                                              padding=args_dict['padding_1'],
                                              stride=args_dict['stride_1']))
 
+        if args_dict['batch_norm']:
+            self.main_modules.append(nn.BatchNorm2d(args_dict['hidden_channels']))
+
         if args_dict['pooling_1'] > 1:
             self.main_modules.append(nn.MaxPool2d(kernel_size=args_dict['pooling_1']))
 
@@ -335,6 +388,9 @@ class ScalogramEncoderBlock(nn.Module):
                                              bias=args_dict['bias'],
                                              padding=args_dict['padding_2'],
                                              stride=args_dict['stride_2']))
+
+        if args_dict['batch_norm']:
+            self.main_modules.append(nn.BatchNorm2d(args_dict['out_channels']))
 
         if args_dict['pooling_2'] > 1:
             self.main_modules.append(nn.MaxPool2d(kernel_size=args_dict['pooling_2']))
@@ -385,32 +441,23 @@ scalogram_encoder_resnet_dict = {'phase': True,
 
 
 class ScalogramResidualEncoder(nn.Module):
-    def __init__(self, cqt_dict=cqt_default_dict, args_dict=scalogram_encoder_default_dict, verbose=0):
+    def __init__(self, args_dict=scalogram_encoder_default_dict, preprocessing_module=None, verbose=0):
         super().__init__()
 
         self.verbose = verbose
 
-        self.cqt = CQT(sr=cqt_dict['sample_rate'],
-                       fmin=cqt_dict['fmin'],
-                       n_bins=cqt_dict['n_bins'],
-                       bins_per_octave=cqt_dict['bins_per_octave'],
-                       filter_scale=cqt_dict['filter_scale'],
-                       hop_length=cqt_dict['hop_length'],
-                       trainable=cqt_dict['trainable_cqt'])
-
         self.phase = args_dict['phase']
         if self.phase:
             args_dict['blocks'][0]['in_channels'] = 2
-            self.phase_diff = PhaseDifference(sr=cqt_dict['sample_rate'],
-                                              fmin=cqt_dict['fmin'],
-                                              n_bins=cqt_dict['n_bins'],
-                                              bins_per_octave=cqt_dict['bins_per_octave'],
-                                              hop_length=cqt_dict['hop_length'])
         else:
             args_dict['blocks'][0]['in_channels'] = 1
 
-        self.receptive_field = self.cqt.conv_kernel_sizes[0]
-        self.downsampling_factor = cqt_dict['hop_length']
+        if preprocessing_module is None:
+            self.receptive_field = 1
+            self.downsampling_factor = 1
+        else:
+            self.receptive_field = preprocessing_module.receptive_field
+            self.downsampling_factor = preprocessing_module.downsampling_factor
 
         self.blocks = nn.ModuleList()
         for i, block_dict in enumerate(args_dict['blocks']):
@@ -425,17 +472,6 @@ class ScalogramResidualEncoder(nn.Module):
                 print("receptive field after block", i, ":", self.receptive_field)
 
     def forward(self, x):
-        x = self.cqt(x)
-
-        if self.phase:
-            amp = torch.pow(abs(x[:, :, 1:]), 2)
-            amp = torch.log(amp + 1e-9)
-            phi = self.phase_diff(angle(x))
-            x = torch.stack([amp, phi], dim=1)
-        else:
-            x = torch.pow(abs(x), 2)
-            x = torch.log(x + 1e-9).unsqueeze(1)
-
         for i, block in enumerate(self.blocks):
             x = block(x)
             if i < len(self.blocks)-1:

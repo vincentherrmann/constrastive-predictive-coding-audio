@@ -8,13 +8,41 @@ from audio_dataset import *
 from sklearn import svm
 
 
+def softplus_score_function(predicted_z, targets):
+    lin_scores = torch.tensordot(predicted_z, targets,
+                                 dims=([2], [1]))  # data_batch, data_step, target_batch, target_step
+    scores = F.softplus(lin_scores)
+    return scores
+
+
+def linear_score_function(predicted_z, targets):
+    lin_scores = torch.tensordot(predicted_z, targets,
+                                 dims=([2], [1]))  # data_batch, data_step, target_batch, target_step
+    return lin_scores
+
+
+def difference_score_function(predicted_z, targets):
+    # predicted_z: batch, step, encoding_size
+    # targets: batch, encoding_size, step
+    #  (data_batch,     data_step,  encoding_size, 1,               1)
+    # -(1,              1,          encoding_size, target_batch,    target_step)
+    diff = predicted_z.unsqueeze(3).unsqueeze(4) - targets.permute(1, 0, 2).unsqueeze(0).unsqueeze(1)
+    dist = torch.sum(diff**2, dim=2)
+    scores = 1 / dist
+    return scores
+
+
 class ContrastiveEstimationTrainer:
     def __init__(self, model: AudioPredictiveCodingModel, dataset, logger=None, device=None,
                  use_all_GPUs=True,
                  regularization=1., validation_set=None, test_task_set=None, prediction_noise=0.01,
                  optimizer=torch.optim.Adam,
                  file_batch_size=1,
-                 score_over_all_timesteps=False):
+                 score_over_all_timesteps=False,
+                 score_function=softplus_score_function,
+                 wasserstein_gradient_penalty=False,
+                 gradient_penalty_factor=10.,
+                 preprocessing=None):
         self.model = model
         self.encoder = model.encoder
         self.ar_size = model.ar_size
@@ -34,6 +62,13 @@ class ContrastiveEstimationTrainer:
         self.optimizer = optimizer
         self.file_batch_size = file_batch_size
         self.score_over_all_timesteps = score_over_all_timesteps
+        self.score_function = score_function
+        self.wasserstein_gradient_penalty = wasserstein_gradient_penalty
+        self.gradient_penalty_factor = gradient_penalty_factor
+        self.preprocessing = preprocessing
+        if torch.cuda.device_count() > 1 and use_all_GPUs:
+            self.preprocessing = torch.nn.DataParallel(preprocessing).cuda()
+        print("use score function", self.score_function)
 
     def train(self,
               batch_size=32,
@@ -57,28 +92,31 @@ class ContrastiveEstimationTrainer:
 
         for current_epoch in range(epochs):
             print("epoch", current_epoch)
-            for batch in iter(dataloader):
-                with torch.autograd.profiler.profile(use_cuda=True, enabled=profile) as prof:
-                    batch = batch.to(device=self.device)
-                    predicted_z, targets, _, _ = self.model(batch.unsqueeze(1))  # data_batch, data_step, target_batch, target_step
+            with torch.autograd.set_detect_anomaly(True), torch.autograd.profiler.profile(use_cuda=True, enabled=profile) as prof:
+                for batch in iter(dataloader):
+                    batch = batch.to(device=self.device).unsqueeze(1)
+                    if self.preprocessing is not None:
+                        batch = self.preprocessing(batch)
+                        batch.requires_grad = True
+                        #batch.retain_grad()
+                    predicted_z, targets, _, _ = self.model(batch)  # data_batch, data_step, target_batch, target_step
 
-                    lin_scores = torch.tensordot(predicted_z, targets,
-                                                 dims=([2], [1]))  # data_batch, data_step, target_batch, target_step
-                    scores = F.softplus(lin_scores)
+                    scores = self.score_function(predicted_z, targets)
 
                     if self.score_over_all_timesteps:
+                        noise_scoring = torch.logsumexp(scores.view(-1, batch_size, self.prediction_steps),
+                                                        dim=0) # target_batch, target_step
                         score_sum = torch.sum(scores.view(-1, batch_size, self.prediction_steps),
-                                              dim=0)  # target_batch, target_step
+                                              dim=0)
                         valid_scores = torch.diagonal(scores, dim1=0, dim2=2)  # data_step, target_step, batch
                         valid_scores = torch.diagonal(valid_scores, dim1=0, dim2=1)  # batch, step
                     else:
                         scores = torch.diagonal(scores, dim1=1, dim2=3).permute([0, 2, 1])  # data_batch, step, target_batch
-                        score_sum = torch.sum(scores, dim=0).permute([1, 0])  # target_batch, step
+                        noise_scoring = torch.logsumexp(scores.view(-1, batch_size, self.prediction_steps),
+                                                        dim=0).permute([1, 0])  # target_batch, target_step
                         valid_scores = torch.diagonal(scores, dim1=0, dim2=2).permute([1, 0])  # batch, step
 
-                    loss_logits = torch.log(valid_scores / score_sum)  # batch, step
-
-                    prediction_losses = -torch.mean(loss_logits, dim=1)
+                    prediction_losses = -torch.mean(valid_scores - noise_scoring, dim=1)
                     loss = torch.mean(prediction_losses)
 
                     if torch.sum(torch.isnan(loss)).item() > 0.:
@@ -98,14 +136,30 @@ class ContrastiveEstimationTrainer:
                         print("mean score sum:", torch.mean(score_sum).item())
                         print("ratio:", torch.mean(score_sum).item() / torch.mean(scores).item())
 
-                    loss += self.regularization * torch.mean(torch.mean(lin_scores, dim=1)**2)  # regulate loss
-                    #loss = torch.clamp(loss, 0, 5)
-
+                    loss += self.regularization * torch.mean(torch.mean(scores, dim=1)**2)  # regulate loss
                     self.model.zero_grad()
+
+                    if self.wasserstein_gradient_penalty:
+                        score_sum = torch.sum(scores)
+                        #self.model.zero_grad()
+                        #batch.zero_grad()
+                        batch_grad = torch.autograd.grad(outputs=score_sum,
+                                                         inputs=batch,
+                                                         create_graph=True,
+                                                         retain_graph=True,
+                                                         only_inputs=True)
+                        #score_sum.backward(retain_graph=True)
+                        gradient_penalty = ((batch_grad[0].norm(2, dim=1) - 1) ** 2).mean()
+                        gradient_penalty = gradient_penalty * self.gradient_penalty_factor
+                        #gradient_penalty.backward(retain_graph=True)
+                    else:
+                        gradient_penalty = loss * 0.
+
+                    loss = loss + gradient_penalty
                     loss.backward()
                     optimizer.step()
 
-                    if self.logger is not None:
+                    if self.logger is not None:  # and self.training_step > 0:
                         self.logger.loss_meter.update(loss.item())
                         self.logger.score_meter.update(torch.max(scores).item())
                         self.logger.log(self.training_step)
@@ -159,33 +213,33 @@ class ContrastiveEstimationTrainer:
             max_steps = len(v_dataloader)
 
         for step, batch in enumerate(iter(v_dataloader)):
-            batch = batch.to(device=self.device)
-            predicted_z, targets, _, _ = self.model(
-                batch.unsqueeze(1))  # data_batch, data_step, target_batch, target_step
+            batch = batch.to(device=self.device).unsqueeze(1)
+            if self.preprocessing is not None:
+                batch = self.preprocessing(batch)
+            predicted_z, targets, _, _ = self.model(batch)  # data_batch, data_step, target_batch, target_step
 
-            lin_scores = torch.tensordot(predicted_z, targets,
-                                         dims=([2], [1]))  # data_batch, data_step, target_batch, target_step
-            scores = F.softplus(lin_scores)  # data_batch, data_step, target_batch, target_step
+            scores = self.score_function(predicted_z, targets)  # data_batch, data_step, target_batch, target_step
 
             if self.score_over_all_timesteps:
+                noise_scoring = torch.logsumexp(scores.view(-1, batch_size, self.prediction_steps),
+                                                dim=0)  # target_batch, target_step
                 score_sum = torch.sum(scores.view(-1, batch_size, self.prediction_steps),
-                                      dim=0)  # target_batch, target_step
+                                      dim=0)
                 valid_scores = torch.diagonal(scores, dim1=0, dim2=2)  # data_step, target_step, batch
                 valid_scores = torch.diagonal(valid_scores, dim1=0, dim2=1)  # batch, step
             else:
                 scores = torch.diagonal(scores, dim1=1, dim2=3).permute([0, 2, 1])  # data_batch, step, target_batch
-                score_sum = torch.sum(scores, dim=0).permute([1, 0])  # target_batch, step
+                noise_scoring = torch.logsumexp(scores.view(-1, batch_size, self.prediction_steps),
+                                                dim=0).permute([1, 0])  # target_batch, target_step
                 valid_scores = torch.diagonal(scores, dim1=0, dim2=2).permute([1, 0])  # batch, step
 
-            loss_logits = torch.log(valid_scores / score_sum)  # batch, step
+            prediction_losses = -torch.mean(valid_scores - noise_scoring, dim=0)
+            loss = torch.mean(prediction_losses)
 
             # calculate prediction accuracy as the proportion of scores that are highest for the correct target
             max_score = torch.argmax(scores.view(batch_size, self.prediction_steps, -1), dim=2)  # batch, step
             correctly_predicted = torch.eq(prediction_template, max_score)
             prediction_accuracy = torch.sum(correctly_predicted, dim=0).type_as(batch) / n
-
-            prediction_losses = -torch.mean(loss_logits, dim=0)
-            loss = torch.mean(prediction_losses)
 
             #loss += self.regularization * torch.mean(torch.mean(lin_scores, dim=1) ** 2)  # regulate loss
             #loss += self.regularization * (1 - torch.mean(scores)) ** 2
@@ -223,8 +277,10 @@ class ContrastiveEstimationTrainer:
                                                    pin_memory=True)
         for step, (batch, labels) in enumerate(iter(t_dataloader)):
             #print("step", step)
-            batch = batch.to(device=self.device)
-            predictions, targets, z, c = self.model(batch.unsqueeze(1))
+            batch = batch.to(device=self.device).unsqueeze(1)
+            if self.preprocessing is not None:
+                batch = self.preprocessing(batch)
+            predictions, targets, z, c = self.model(batch)
             #z = self.model.encoder(batch.unsqueeze(1))
             #c = self.model.autoregressive_model(z)
             task_data[step*batch_size:(step+1)*batch_size, :] = c.detach().cpu()
@@ -275,3 +331,13 @@ class DeterministicSampler(torch.utils.data.Sampler):
 
     def __len__(self):
         return len(self.data_source)
+
+
+def grad_mean_var(module):
+    grad_dict = {}
+    for p in module.named_parameters():
+        if p[1].grad is not None:
+            grad_dict[p[0]] = [torch.mean(p[1].grad).item(), torch.var(p[1].grad).item()]
+
+    return grad_dict
+

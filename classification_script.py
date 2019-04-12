@@ -5,12 +5,12 @@ from setup_functions import *
 from configs.experiment_configs import *
 
 #default_experiment = 'default'
-default_experiment = 'e16'
-run = 'run_0'
+default_experiment = 'c1'
+run = 'run_1'
 
 parser = argparse.ArgumentParser(description='Contrastive Predictive Coding Training')
 parser.add_argument('--experiment', default=default_experiment, type=str)
-parser.add_argument('--name', default='model_' + datetime.datetime.today().strftime('%Y-%m-%d') + '_' + run, type=str)
+parser.add_argument('--name', default='classification_model_' + datetime.datetime.today().strftime('%Y-%m-%d') + '_' + run, type=str)
 
 
 def main(experiment='default', name=None):
@@ -22,22 +22,22 @@ def main(experiment='default', name=None):
     if name is not None:
         settings['snapshot_config']['name'] = name
 
-    pc_model, preprocessing_module = setup_model(cqt_params=settings['cqt_config'],
-                                                 encoder_params=settings['encoder_config'],
-                                                 ar_params=settings['ar_model_config'],
-                                                 visible_steps=settings['training_config']['visible_steps'],
-                                                 prediction_steps=settings['training_config']['prediction_steps'])
+    model, preprocessing_module = setup_classification_model(cqt_params=settings['cqt_config'],
+                                                             model_params=settings['model_config'])
 
-    pc_model, snapshot_manager, continue_training_at_step = setup_snapshot_manager(model=pc_model,
+    pc_model, snapshot_manager, continue_training_at_step = setup_snapshot_manager(model=model,
                                                                                    args_dict=settings['snapshot_config'],
                                                                                    try_proceeding=True)
 
-    trainer = setup_ce_trainer(pc_model,
-                               snapshot_manager,
-                               preprocessing_module=preprocessing_module,
-                               dataset_args=settings['dataset_config'],
-                               trainer_args=settings['training_config'],
-                               dev=dev)
+    trainer = setup_classification_trainer(model,
+                                           snapshot_manager,
+                                           preprocessing_module=preprocessing_module,
+                                           dataset_args=settings['dataset_config'],
+                                           trainer_args=settings['training_config'],
+                                           dev=dev)
+
+    print("training set length:", len(trainer.dataset))
+    print("validation set length:", len(trainer.validation_set))
 
     try:
         trainer.logger.writer.add_text('configuration', experiment, 0)

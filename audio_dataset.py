@@ -66,8 +66,8 @@ class AudioDataset(torch.utils.data.Dataset):
             print("Error: zero frames requested")
         data, _ = torchaudio.load(file,
                                   normalization=True,
-                                  num_frames=frames,
-                                  offset=start)
+                                  num_frames=int(frames),
+                                  offset=int(start))
         return data.squeeze().type(self.dtype)
 
     def calculate_length(self):

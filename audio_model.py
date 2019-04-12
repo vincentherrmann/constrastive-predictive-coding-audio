@@ -3,8 +3,6 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 
-from configs.autoregressive_model_configs import *
-
 encoder_default_dict = {'strides': [5, 4, 2, 2, 2],
                         'kernel_sizes': [10, 8, 4, 4, 4],
                         'channel_count': [512, 512, 512, 512, 512],
@@ -77,76 +75,63 @@ class AudioGRUModel(nn.Module):
         return hidden
 
 
-class ConvArModel(nn.Module):
-    def __init__(self, kernel_sizes=[9, 9, 9], in_channels=512, conv_channels=256, out_channels=256, bias=True, batch_norm=False,
-                 dropout=0.0):
-        # 118
-        # 110
-        # 65
-        # 57
-        # 29
-        # 21
-        # 11
-
-        # 60 56 52  # 60 62
-        # 26 22 18  # 31 23
-        #  9  5     # 12  4
-
+class ConvolutionalArBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, pooling=1, stride=1, bias=True, residual=False, batch_norm=False):
         super().__init__()
-        self.module_list = nn.ModuleList()
-        channel_count = in_channels
-        for l in range(len(kernel_sizes)):
-            self.module_list.append(nn.Conv1d(in_channels=channel_count,
-                                              out_channels=conv_channels,
-                                              kernel_size=kernel_sizes[l],
-                                              bias=bias))
-            channel_count = conv_channels
-            #self.module_list.append(nn.ReLU())
-            #self.module_list.append(nn.Conv1d(in_channels=channel_count,
-            #                                  out_channels=channel_count,
-            #                                  kernel_size=kernel_sizes[l],
-            #                                  groups=channel_count,
-            #                                  bias=bias))
-            self.module_list.append(nn.ReLU())
+        self.main_modules = nn.ModuleList()
+        if pooling > 1:
+            self.main_modules.append(nn.MaxPool1d(pooling, ceil_mode=True))
+        self.main_modules.append(nn.Conv1d(in_channels=in_channels,
+                                           out_channels=out_channels,
+                                           kernel_size=kernel_size,
+                                           stride=stride,
+                                           bias=bias))
+        if batch_norm:
+            self.main_modules.append(nn.BatchNorm1d(out_channels))
 
-            if l < len(kernel_sizes) - 1:
-                self.module_list.append(nn.MaxPool1d(2, ceil_mode=True))
+        self.main_modules.append(nn.ReLU())
 
-                if dropout > 0.:
-                    self.module_list.append(nn.Dropout(dropout))
+        self.residual_modules = None
 
-            if batch_norm:
-                self.module_list.append(nn.BatchNorm1d(channel_count))
-        self.module_list.append(nn.Conv1d(in_channels=channel_count,
-                                          out_channels=out_channels,
-                                          kernel_size=1,
-                                          bias=bias))
+        self.residual = residual
+        if self.residual:
+            self.residual_modules = nn.ModuleList()
+            if pooling*stride > 1:
+                self.residual_modules.append(nn.MaxPool1d(pooling*stride, ceil_mode=True))
+            if in_channels != out_channels:
+                self.residual_modules.append(nn.Conv1d(in_channels=in_channels,
+                                                       out_channels=out_channels,
+                                                       kernel_size=1))
 
     def forward(self, x):
-        for m in self.module_list:
+        original_x = x
+        for m in self.main_modules:
             x = m(x)
-        return x[:, :, -1]
+        main_x = x
+        if self.residual:
+            x = original_x
+            for m in self.residual_modules:
+                x = m(x)
+            main_x += x[:, :, -main_x.shape[2]:]
+        return main_x
 
 
 class ConvolutionalArModel(nn.Module):
-    def __init__(self, args_dict=ar_conv_default_dict):
+    def __init__(self, args_dict):
         super().__init__()
         self.module_list = nn.ModuleList()
         for l in range(len(args_dict['kernel_sizes'])):
-            pooling = args_dict['pooling'][l]
-            if pooling > 1:
-                self.module_list.append(nn.MaxPool1d(2, ceil_mode=True))
+            self.module_list.append(ConvolutionalArBlock(in_channels=args_dict['channel_count'][l],
+                                                         out_channels=args_dict['channel_count'][l+1],
+                                                         kernel_size=args_dict['kernel_sizes'][l],
+                                                         stride=args_dict['stride'][l],
+                                                         pooling=args_dict['pooling'][l],
+                                                         bias=args_dict['bias'],
+                                                         batch_norm=args_dict['batch_norm'],
+                                                         residual=args_dict['residual']))
 
-            self.module_list.append(nn.Conv1d(in_channels=args_dict['channels_count'][l],
-                                              out_channels=args_dict['channels_count'][l+1],
-                                              kernel_size=args_dict['kernel_size'][l],
-                                              stride=args_dict['stride'][l]))
-
-            if l < len(args_dict['kernel_sizes']) - 1:
-                self.module_list.append(nn.ReLU())
-
-        self.encoding_size = args_dict['channels_count'][0]
-        self.ar_size = args_dict['channels_count'][-1]
+        self.encoding_size = args_dict['channel_count'][0]
+        self.ar_size = args_dict['channel_count'][-1]
 
     def forward(self, x):
         for m in self.module_list:
