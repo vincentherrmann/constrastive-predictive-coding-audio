@@ -5,7 +5,7 @@ from setup_functions import *
 from configs.experiment_configs import *
 
 #default_experiment = 'default'
-default_experiment = 'e16'
+default_experiment = 'e20'
 run = 'run_0'
 
 parser = argparse.ArgumentParser(description='Contrastive Predictive Coding Training')
@@ -53,4 +53,5 @@ def main(experiment='default', name=None):
 
 if __name__ == '__main__':
     args = parser.parse_args()
+    #args.name = "model_2019-04-14_run_1"
     main(args.experiment, args.name)

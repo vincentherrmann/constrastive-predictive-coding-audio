@@ -76,8 +76,8 @@ def setup_model(cqt_params=cqt_default_dict,
     ar_model = ar_params['model'](args_dict=ar_params)
     pc_model = AudioPredictiveCodingModel(encoder=encoder,
                                           autoregressive_model=ar_model,
-                                          enc_size=ar_model.encoding_size,
-                                          ar_size=ar_model.ar_size,
+                                          enc_size=ar_params['encoding_size'],
+                                          ar_size=ar_params['ar_code_size'],
                                           visible_steps=visible_steps,
                                           prediction_steps=prediction_steps)
     return pc_model, preprocessing_module
@@ -85,7 +85,8 @@ def setup_model(cqt_params=cqt_default_dict,
 
 def setup_snapshot_manager(model,
                            args_dict=snapshot_manager_default_dict,
-                           try_proceeding=True):
+                           try_proceeding=True,
+                           load_to_cpu=False):
     try:
         gcs_manager = GCSManager(args_dict['gcs_project'],
                                  args_dict['gcs_bucket'])
@@ -98,7 +99,8 @@ def setup_snapshot_manager(model,
                                        snapshot_location=args_dict['snapshot_location'],
                                        logs_location=args_dict['logs_location'],
                                        gcs_snapshot_location=args_dict['gcs_snapshot_location'],
-                                       gcs_logs_location=args_dict['gcs_logs_location'])
+                                       gcs_logs_location=args_dict['gcs_logs_location'],
+                                       load_to_cpu=load_to_cpu)
 
     continue_training_at_step = 0
     if try_proceeding:

@@ -53,21 +53,27 @@ class MultiheadAttention(nn.Module):
         k = self.k_linear(k).view(batch_size, -1, self.num_heads, self.channels_per_head).transpose(1, 2)
         v = self.v_linear(v).view(batch_size, -1, self.num_heads, self.channels_per_head).transpose(1, 2)
 
+        # q, k, v shape: batch, num_heads, steps, channels_per_head
+
         lin_scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.channels_per_head)
         scores = F.softmax(lin_scores, dim=-1)
 
-        attention_output = torch.matmul(scores, v)
+        # score shape: batch, num_heads, steps, steps
+
+        attention_output = torch.matmul(scores, v)  # shape: batch, num_heads, steps, channels_per_head
+
         merged_heads = attention_output.transpose(1, 2).contiguous().view(batch_size, -1, self.channels)
         output = self.out_linear(merged_heads)
         return output
 
 
 class AttentionModel(nn.Module):
-    def __init__(self, channels, output_size, num_layers=2, num_heads=8, feedforward_size=512, seq_length=128, dropout=0.1):
+    def __init__(self, args_dict):
         super().__init__()
-        self.num_layers = num_layers
+        channels = args_dict['channels']
+        self.num_layers = args_dict['num_layers']
 
-        self.positional_encoder = PositionalEncoder(channels, seq_length)
+        self.positional_encoder = PositionalEncoder(channels, args_dict['sequence_length'])
 
         self.attentions = nn.ModuleList()
         self.dropout1 = nn.ModuleList()
@@ -78,15 +84,15 @@ class AttentionModel(nn.Module):
         self.norm2 = nn.ModuleList()
 
         for _ in range(self.num_layers):
-            self.attentions.append(MultiheadAttention(num_heads, channels))
-            self.dropout1.append(nn.Dropout(dropout))
+            self.attentions.append(MultiheadAttention(args_dict['num_heads'], channels))
+            self.dropout1.append(nn.Dropout(args_dict['dropout']))
             self.norm1.append(nn.LayerNorm(channels))
-            self.ff1.append(nn.Linear(channels, feedforward_size))
-            self.ff2.append(nn.Linear(feedforward_size, channels))
-            self.dropout2.append(nn.Dropout(dropout))
+            self.ff1.append(nn.Linear(channels, args_dict['feedforward_size']))
+            self.ff2.append(nn.Linear(args_dict['feedforward_size'], channels))
+            self.dropout2.append(nn.Dropout(args_dict['dropout']))
             self.norm2.append(nn.LayerNorm(channels))
 
-        self.end_layer = nn.Linear(channels*seq_length, output_size)
+        self.end_layer = nn.Linear(channels * args_dict['sequence_length'], args_dict['output_size'])
 
     def forward(self, x):
         x = x.transpose(1, 2)

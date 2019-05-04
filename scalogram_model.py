@@ -449,8 +449,6 @@ class ScalogramResidualEncoder(nn.Module):
         self.phase = args_dict['phase']
         if self.phase:
             args_dict['blocks'][0]['in_channels'] = 2
-        else:
-            args_dict['blocks'][0]['in_channels'] = 1
 
         if preprocessing_module is None:
             self.receptive_field = 1
@@ -472,6 +470,8 @@ class ScalogramResidualEncoder(nn.Module):
                 print("receptive field after block", i, ":", self.receptive_field)
 
     def forward(self, x):
+        if len(x.shape) == 3:
+            x = x.unsqueeze(2)
         for i, block in enumerate(self.blocks):
             x = block(x)
             if i < len(self.blocks)-1:

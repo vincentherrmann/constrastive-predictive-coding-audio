@@ -156,7 +156,8 @@ class AudioPredictiveCodingModel(nn.Module):
         targets = z[:, :, -self.prediction_steps:]  # batch, enc_size, step  # .detach()  # TODO should this be detached?
         z = z[:, :, -(self.visible_steps+self.prediction_steps):-self.prediction_steps]
         c = self.autoregressive_model(z)
-
+        if len(c.shape) == 3:
+            c = c[:, :, 0]
         predicted_z = self.prediction_model(c)  # batch, step*enc_size
         predicted_z = predicted_z.view(-1, self.prediction_steps, self.enc_size)  # batch, step, enc_size
 

@@ -5,8 +5,8 @@ from setup_functions import *
 from configs.experiment_configs import *
 
 #default_experiment = 'default'
-default_experiment = 'c1'
-run = 'run_1'
+default_experiment = 'c2'
+run = 'run_2'
 
 parser = argparse.ArgumentParser(description='Contrastive Predictive Coding Training')
 parser.add_argument('--experiment', default=default_experiment, type=str)
@@ -25,9 +25,9 @@ def main(experiment='default', name=None):
     model, preprocessing_module = setup_classification_model(cqt_params=settings['cqt_config'],
                                                              model_params=settings['model_config'])
 
-    pc_model, snapshot_manager, continue_training_at_step = setup_snapshot_manager(model=model,
-                                                                                   args_dict=settings['snapshot_config'],
-                                                                                   try_proceeding=True)
+    model, snapshot_manager, continue_training_at_step = setup_snapshot_manager(model=model,
+                                                                                args_dict=settings['snapshot_config'],
+                                                                                try_proceeding=True)
 
     trainer = setup_classification_trainer(model,
                                            snapshot_manager,
