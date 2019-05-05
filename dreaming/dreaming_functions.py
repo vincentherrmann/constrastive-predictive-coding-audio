@@ -65,11 +65,12 @@ class Jitter(torch.nn.Module):
 
 
 class JitterLoop(torch.nn.Module):
-    def __init__(self, output_length, dim, jitter_batches=1):
+    def __init__(self, output_length, dim, jitter_size=None, jitter_batches=1):
         super().__init__()
         self.output_length = output_length
         self.dim = dim
         self.jitter_batches = jitter_batches
+        self.jitter_size = jitter_size
 
     def forward(self, x):
         if x.shape[0] == 1 and self.jitter_batches > 1:
@@ -84,8 +85,13 @@ class JitterLoop(torch.nn.Module):
         repeat_list[self.dim] = repeats
         rx = x.repeat(repeat_list)
 
+        if self.jitter_size is None:
+            jitter_size = x.shape[self.dim]
+        else:
+            jitter_size = self.jitter_size
+
         indices = torch.arange(self.output_length).unsqueeze(0).repeat(jitter_batches, 1)
-        offset = torch.randint(x.shape[self.dim], size=[jitter_batches]).unsqueeze(1)
+        offset = torch.randint(jitter_size, size=[jitter_batches]).unsqueeze(1)
 
         indices += offset
 

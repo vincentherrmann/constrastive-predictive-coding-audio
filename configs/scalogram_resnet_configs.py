@@ -242,6 +242,16 @@ scalogram_resnet_architecture_6 = scalogram_resnet_architecture_5.copy()
 for block in scalogram_resnet_architecture_6['blocks']:
     block['batch_norm'] = True
 
+
+scalogram_resnet_architecture_7 = scalogram_resnet_architecture_6.copy()
+scalogram_resnet_architecture_7['blocks'][1]['out_channels'] = 128
+scalogram_resnet_architecture_7['blocks'][2]['in_channels'] = 128
+scalogram_resnet_architecture_7['blocks'][2]['out_channels'] = 256
+scalogram_resnet_architecture_7['blocks'][3]['in_channels'] = 256
+scalogram_resnet_architecture_7['blocks'][3]['out_channels'] = 512
+
+
+# classification architecture
 block_4 = block_3x3_valid.copy()
 block_4['in_channels']  = 256
 block_4['out_channels'] = 346
@@ -249,6 +259,7 @@ block_4['kernel_size_1'] = (1, 30)
 block_4['kernel_size_2'] = (1, 1)
 
 scalogram_resnet_classification_1 = scalogram_resnet_architecture_6.copy()
+scalogram_resnet_classification_1['blocks'] = scalogram_resnet_classification_1['blocks'].copy()
 scalogram_resnet_classification_1['blocks'][3]['batch_norm'] = False
 
 scalogram_resnet_classification_1['blocks'].append(block_4)

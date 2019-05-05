@@ -8,6 +8,7 @@ from setup_functions import *
 from configs.experiment_configs import *
 from matplotlib import pyplot as plt
 from dreaming.dreaming_functions import *
+from dreaming.streaming import *
 
 experiment = 'e18'
 name = 'snapshots_model_2019-04-14_run_1_95000'
@@ -34,14 +35,20 @@ model, snapshot_manager, continue_training_at_step = setup_snapshot_manager(mode
                                                                             args_dict=settings['snapshot_config'],
                                                                             try_proceeding=True,
                                                                             load_to_cpu=(dev == 'cpu'))
-target_activations = []
 
+server = LoopStreamServer(port=8765, message_length=128000)
+server.start_server()
+
+print("server started")
+
+target_activations = []
 
 def activation_hook(module, input, output):
     target_activations.append(output)
 
 
-model.autoregressive_model.module_list[4].register_forward_hook(activation_hook)
+#model.autoregressive_model.module_list[4].register_forward_hook(activation_hook)
+model.encoder.blocks[1].register_forward_hook(activation_hook)
 
 time_masking = 100
 pitch_masking = 50
@@ -51,7 +58,7 @@ input_length += model.encoder.downsampling_factor * (model.visible_steps + model
 input_length += time_jitter
 
 clip_length = 64000
-audio_input, sr = torchaudio.load('base_loop_3_16khz.wav')
+audio_input, sr = torchaudio.load('base_loop_2_16khz.wav')
 audio_input = audio_input.unsqueeze(0)
 audio_input = audio_input.to(dev)
 audio_input += torch.rand(1, 1, clip_length, device=dev) * 1e-6
@@ -64,9 +71,10 @@ if torch.cuda.device_count() > 1:
 
 model.eval()
 
-optimizer = torch.optim.Adam([audio_input], lr=0.001)
+optimizer = torch.optim.Adam([audio_input], lr=0.0005)
+scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer=optimizer, lr_lambda=lambda s: 1.05**s)
 jitter_module = Jitter([time_jitter], dims=[2], jitter_batches=32)
-jitter_loop_module = JitterLoop(output_length=input_length, dim=2, jitter_batches=32)
+jitter_loop_module = JitterLoop(output_length=input_length, dim=2, jitter_batches=32, jitter_size=64000)
 
 for step in range(1000):
     #norm_audio_input = audio_input / torch.var(audio_input)
@@ -74,20 +82,21 @@ for step in range(1000):
     jittered_input = jitter_loop_module(norm_audio_input)
     scal = preprocessing_module(jittered_input)
 
-    scal = mask_width_section(scal, time_masking)
+    scal = mask_width_section(scal, time_masking)  # batch, channel, pitch, time
     scal = mask_height_section(scal, pitch_masking)
 
     _, _, z, c = model(scal)
 
     target = torch.cuda.comm.gather(target_activations, dim=0, destination=torch.cuda.current_device())
     target_activations = []
-    #loss = -torch.mean(torch.mean(target, dim=2), dim=0)[0]**2
-    loss = -torch.mean(c, dim=0)[15]**2
-    #loss = -torch.sum(torch.mean(c, dim=0)**2)
+    #loss = -torch.mean(torch.mean(target, dim=2), dim=0)[0]**2  # autoregressive channel for whole loop
+    #loss = -torch.mean(torch.mean(target**2, dim=0), dim=0)[5, 0] # pitch, time
+    #loss = -torch.mean(c, dim=0)[2]**2
+    loss = -torch.mean(torch.mean(c, dim=0)**2)
 
     noise_loss = torch.clamp(scal[:, 0], -20., 100.) + 20.01
     noise_loss = torch.mean(torch.pow(torch.abs(noise_loss), 0.5))
-    loss = loss + (2.0 * noise_loss)
+    loss = loss + (0.1 * noise_loss)
     
     if audio_input.grad is not None:
         audio_input.grad *= 0
@@ -104,7 +113,18 @@ for step in range(1000):
     #audio_input.grad = normalized_grad
 
     optimizer.step()
+    scheduler.step()
     print("loss:", loss.item())
+    print("lr:", scheduler.get_lr())
+
+    try:
+        signal_data = audio_input.detach().squeeze().cpu().numpy()
+        signal_data /= np.max(signal_data)
+        signal_data *= 32000.
+        server.set_data(signal_data.astype(np.int16).tobytes())
+    except:
+        raise
+        #pass
 
     if step % 20 == 0:
         data = audio_input.detach().squeeze().cpu().numpy()
@@ -119,4 +139,6 @@ for step in range(1000):
         plt.subplot(2, 1, 2)
         plt.imshow(spec.cpu().numpy(), aspect='auto', origin='lower')
         plt.show()
+
+server.stop()
 

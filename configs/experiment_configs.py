@@ -87,6 +87,22 @@ experiments['e15']['training_config']['train_batch_size'] = 32
 experiments['e16'] = experiments['e15'].copy()
 experiments['e16']['ar_model_config'] = autoregressive_model_configs.ar_conv_architecture_2
 
+experiments['e17'] = experiments['e16'].copy()
+experiments['e17']['training_config']['sum_over_all_timesteps'] = False
+experiments['e17']['training_config']['file_batch_size'] = 8
+
+experiments['e18'] = experiments['e17'].copy()
+experiments['e18']['ar_model_config'] = autoregressive_model_configs.ar_resnet_architecture_1
+
+experiments['e19'] = experiments['e18'].copy()
+experiments['e19']['training_config']['gradient_penalty_factor'] = 10.
+
+experiments['e20'] = experiments['e19'].copy()
+experiments['e20']['encoder_config'] = scalogram_resnet_configs.scalogram_resnet_architecture_7
+experiments['e20']['ar_model_config'] = autoregressive_model_configs.attention_architecture_1
 
 experiments['c1'] = classification_default_dict
 experiments['c1']['training_config']['learning_rate'] = 1e-3
+
+experiments['c2'] = experiments['c1'].copy()
+experiments['c2']['training_config']['unique_length'] = 64000

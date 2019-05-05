@@ -1,4 +1,5 @@
 import socket
+import time
 #import pyaudio
 import numpy as np
 import io
@@ -39,11 +40,13 @@ class LoopStreamServer:
                 if self.current_data is not None:
                     current_bytes = self.current_data.read(self.chunk_size)
                     if len(current_bytes) == 0:
+                        self.current_data = None
                         continue
                 else:
                     with self.lock:
                         self.current_data = self.new_data
                         self.new_data = None
+                    time.sleep(0.1)
                     continue
                 conn.send(current_bytes)
                 #print("send", len(current_bytes), "bytes")
@@ -100,6 +103,7 @@ class LoopStreamClient:
                 #print("receive", len(new_bytes), "bytes")
                 if last_chunk:
                     if self.current_data.getvalue() != b'':
+                        self.current_data.write(new_bytes)
                         with self.lock:
                             self.finished_data = self.current_data.getvalue()
                             self.new_data_available = True

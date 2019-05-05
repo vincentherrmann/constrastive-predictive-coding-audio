@@ -3,7 +3,7 @@ import torch
 import time
 import numpy as np
 
-server = LoopStreamServer(port=2222, message_length=64000)
+server = LoopStreamServer(port=8765, message_length=64000)
 server.start_server()
 
 time.sleep(0.5)

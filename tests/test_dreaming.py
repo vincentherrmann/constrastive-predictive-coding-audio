@@ -21,7 +21,7 @@ class TestJitter(TestCase):
 
 class TestStreaming(TestCase):
     def test_loop_streaming(self):
-        server = LoopStreamServer(port=2222)
+        server = LoopStreamServer(port=8765)
         server.start_server()
 
         time.sleep(1.)
