@@ -19,7 +19,9 @@ contrastive_estimation_default_dict = {
     'prediction_steps': 16,
     'score_function': softplus_score_function,
     'wasserstein_gradient_penalty': False,
-    'gradient_penalty_factor': 10.
+    'gradient_penalty_factor': 10.,
+    'trace_model': False,
+    'use_all_GPUs': True
 }
 
 contrastive_estimation_difference_scoring = contrastive_estimation_default_dict.copy()

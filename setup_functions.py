@@ -67,8 +67,12 @@ class CPCLogger(TensorboardLogger):
 def setup_model(cqt_params=cqt_default_dict,
                 encoder_params=scalogram_resnet_architecture_1,
                 ar_params=ar_conv_default_dict,
+                trainer_args=contrastive_estimation_default_dict,
+                device=None,
                 visible_steps=60,
-                prediction_steps=16):
+                prediction_steps=16,
+                trace_model=False,
+                use_all_GPUs=True):
     preprocessing_module = PreprocessingModule(cqt_dict=cqt_params,
                                                phase=encoder_params['phase'])
     encoder = encoder_params['model'](args_dict=encoder_params,
@@ -78,8 +82,43 @@ def setup_model(cqt_params=cqt_default_dict,
                                           autoregressive_model=ar_model,
                                           enc_size=ar_params['encoding_size'],
                                           ar_size=ar_params['ar_code_size'],
-                                          visible_steps=visible_steps,
-                                          prediction_steps=prediction_steps)
+                                          visible_steps=trainer_args['visible_steps'],
+                                          prediction_steps=trainer_args['prediction_steps'])
+
+    untraced_model = pc_model
+
+    item_length = pc_model.item_length
+
+    if trainer_args['trace_model']:
+        print('trace model...')
+        dummy_batch = torch.randn(2, item_length)
+        dummy_batch = dummy_batch.unsqueeze(1)
+        if preprocessing_module is not None:
+            dummy_batch = preprocessing_module(dummy_batch)
+            dummy_batch.requires_grad = True
+            # batch.retain_grad()
+        pc_model = torch.jit.trace(pc_model, dummy_batch)
+        print('...traced')
+
+    if torch.cuda.device_count() > 1 and trainer_args['use_all_GPUs']:
+        print("using", torch.cuda.device_count(), "GPUs")
+        pc_model = torch.nn.DataParallel(pc_model).cuda()
+        preprocessing_module = torch.nn.DataParallel(preprocessing_module).cuda()
+
+    return pc_model, preprocessing_module, untraced_model
+
+    # TODO is it okay to trace after wrapping in DataParallel?
+
+    # create traced model
+    print('trace model...')
+    dummy_batch = torch.randn(trainer_args['train_batch_size'], item_length)
+    dummy_batch = dummy_batch.unsqueeze(1).to(device)
+    if preprocessing_module is not None:
+        dummy_batch = preprocessing_module(dummy_batch)
+        dummy_batch.requires_grad = True
+        # batch.retain_grad()
+    pc_model = torch.jit.trace(pc_model, dummy_batch)
+    print('...traced')
     return pc_model, preprocessing_module
 
 
@@ -122,26 +161,37 @@ def setup_classification_model(cqt_params=cqt_default_dict,
                                                phase=model_params['phase'])
     model = model_params['model'](args_dict=model_params,
                                   preprocessing_module=preprocessing_module)
+
+    # create traced model
+    dummy_batch = torch.random(1, model.item_length)
+    dummy_batch = dummy_batch.to(device=model.device).unsqueeze(1)
+    if preprocessing_module is not None:
+        dummy_batch = preprocessing_module(dummy_batch)
+        dummy_batch.requires_grad = True
+        # batch.retain_grad()
+    model = torch.jit.trace(model, dummy_batch)
+
     return model, preprocessing_module
 
 
 def setup_ce_trainer(model,
                      snapshot_manager,
+                     item_length,
+                     downsampling_factor,
+                     ar_size,
                      preprocessing_module=None,
                      dataset_args=melodic_progressive_house_default_dict,
                      trainer_args=contrastive_estimation_default_dict,
                      dev='cpu'):
-    item_length = model.encoder.receptive_field
-    item_length += (model.visible_steps + model.prediction_steps) * model.encoder.downsampling_factor
 
     training_set = AudioDataset(dataset_args['training_set'],
                                 item_length=item_length,
-                                unique_length=model.encoder.downsampling_factor * dataset_args['unique_steps'])
+                                unique_length=downsampling_factor * dataset_args['unique_steps'])
     print("training set length:", len(training_set))
 
     validation_set = AudioDataset(dataset_args['validation_set'],
                                   item_length=item_length,
-                                  unique_length=model.prediction_steps * model.encoder.downsampling_factor)
+                                  unique_length=trainer_args['prediction_steps'] * downsampling_factor)
     print("validation set length:", len(validation_set))
 
     task_set = AudioTestingDataset(dataset_args['task_set'],
@@ -161,7 +211,9 @@ def setup_ce_trainer(model,
                                            device=dev,
                                            wasserstein_gradient_penalty=trainer_args['wasserstein_gradient_penalty'],
                                            gradient_penalty_factor=trainer_args['gradient_penalty_factor'],
-                                           preprocessing=preprocessing_module)
+                                           preprocessing=preprocessing_module,
+                                           prediction_steps=trainer_args['prediction_steps'],
+                                           ar_size=ar_size)
 
     if trainer_args['wasserstein_gradient_penalty']:
         preprocessing_module.output_requires_grad = True

@@ -1,11 +1,14 @@
 import torch
 import argparse
 import datetime
+import pprint
 from setup_functions import *
 from configs.experiment_configs import *
 
+pp = pprint.PrettyPrinter(indent=4)
+
 #default_experiment = 'default'
-default_experiment = 'e20'
+default_experiment = 'e21'
 run = 'run_0'
 
 parser = argparse.ArgumentParser(description='Contrastive Predictive Coding Training')
@@ -19,14 +22,18 @@ def main(experiment='default', name=None):
 
     settings = experiments[experiment]
 
+    pp.pprint(settings)
+
     if name is not None:
         settings['snapshot_config']['name'] = name
 
-    pc_model, preprocessing_module = setup_model(cqt_params=settings['cqt_config'],
-                                                 encoder_params=settings['encoder_config'],
-                                                 ar_params=settings['ar_model_config'],
-                                                 visible_steps=settings['training_config']['visible_steps'],
-                                                 prediction_steps=settings['training_config']['prediction_steps'])
+    settings['training_config']['trace_model'] = False
+
+    pc_model, preprocessing_module, untraced_model = setup_model(cqt_params=settings['cqt_config'],
+                                                                 encoder_params=settings['encoder_config'],
+                                                                 ar_params=settings['ar_model_config'],
+                                                                 trainer_args=settings['training_config'],
+                                                                 device=dev)
 
     pc_model, snapshot_manager, continue_training_at_step = setup_snapshot_manager(model=pc_model,
                                                                                    args_dict=settings['snapshot_config'],
@@ -34,10 +41,15 @@ def main(experiment='default', name=None):
 
     trainer = setup_ce_trainer(pc_model,
                                snapshot_manager,
+                               item_length=untraced_model.item_length,
+                               downsampling_factor=untraced_model.encoder.downsampling_factor,
+                               ar_size=untraced_model.ar_size,
                                preprocessing_module=preprocessing_module,
                                dataset_args=settings['dataset_config'],
                                trainer_args=settings['training_config'],
                                dev=dev)
+
+    pp.pprint(pc_model)
 
     try:
         trainer.logger.writer.add_text('configuration', experiment, 0)

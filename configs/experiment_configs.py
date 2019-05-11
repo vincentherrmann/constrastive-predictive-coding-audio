@@ -101,6 +101,10 @@ experiments['e20'] = experiments['e19'].copy()
 experiments['e20']['encoder_config'] = scalogram_resnet_configs.scalogram_resnet_architecture_7
 experiments['e20']['ar_model_config'] = autoregressive_model_configs.attention_architecture_1
 
+experiments['e21'] = experiments['e18'].copy()
+experiments['e21']['ar_model_config'] = autoregressive_model_configs.ar_resnet_architecture_2
+
+
 experiments['c1'] = classification_default_dict
 experiments['c1']['training_config']['learning_rate'] = 1e-3
 

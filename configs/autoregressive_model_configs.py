@@ -32,6 +32,7 @@ ar_block_default_dict['in_channels'] = 256
 ar_block_default_dict['out_channels'] = 256
 ar_block_default_dict['kernel_size_1'] = (1, 9)
 ar_block_default_dict['kernel_size_2'] = (1, 1)
+ar_block_default_dict['ceil_pooling'] = True
 
 ar_resnet_default_dict = {'model': ScalogramResidualEncoder,
                           'phase': False,
@@ -56,6 +57,12 @@ block_2['kernel_size_1'] = (1, 8)
 ar_resnet_architecture_1 = ar_resnet_default_dict.copy()
 ar_resnet_architecture_1['blocks'] = [block_0, block_1, block_2]
 ar_resnet_architecture_1['ar_code_size'] = 512
+
+ar_resnet_architecture_2 = ar_resnet_architecture_1.copy()
+ar_resnet_architecture_2['encoding_size'] = 512
+ar_resnet_architecture_2['ar_code_size'] = 256
+ar_resnet_architecture_2['blocks'][0]['in_channels'] = 512
+ar_resnet_architecture_2['blocks'][2]['out_channels'] = 256
 
 
 attention_default_dict = {

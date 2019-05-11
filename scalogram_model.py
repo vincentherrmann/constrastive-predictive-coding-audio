@@ -375,7 +375,8 @@ class ScalogramEncoderBlock(nn.Module):
             self.main_modules.append(nn.BatchNorm2d(args_dict['hidden_channels']))
 
         if args_dict['pooling_1'] > 1:
-            self.main_modules.append(nn.MaxPool2d(kernel_size=args_dict['pooling_1']))
+            self.main_modules.append(nn.MaxPool2d(kernel_size=args_dict['pooling_1'],
+                                                  ceil_mode=args_dict['ceil_pooling']))
 
         self.main_modules.append(nn.ReLU())
 
@@ -393,7 +394,8 @@ class ScalogramEncoderBlock(nn.Module):
             self.main_modules.append(nn.BatchNorm2d(args_dict['out_channels']))
 
         if args_dict['pooling_2'] > 1:
-            self.main_modules.append(nn.MaxPool2d(kernel_size=args_dict['pooling_2']))
+            self.main_modules.append(nn.MaxPool2d(kernel_size=args_dict['pooling_2'],
+                                                  ceil_mode=args_dict['ceil_pooling']))
 
         self.residual = args_dict['residual']
         if self.residual:
@@ -414,6 +416,7 @@ class ScalogramEncoderBlock(nn.Module):
         original_input = x
         for m in self.main_modules:
             x = m(x)
+
         main = x
         x = original_input
         if self.residual:
@@ -424,13 +427,16 @@ class ScalogramEncoderBlock(nn.Module):
             r_w = res.shape[3]
             m_h = main.shape[2]
             m_w = main.shape[3]
-            o_h = math.ceil((r_h - m_h) / 2)
-            o_w = math.ceil((r_w - m_w) / 2)
-            if o_h > 0:
-                res = res[:, :, -(o_h + m_h):-o_h, :]
-            if o_w > 0:
-                res = res[:, :, :, -(o_w + m_w):-o_w]
+            o_h = (r_h - m_h + 1) / 2
+            o_w = (r_w - m_w + 1) / 2
+            if int(o_h) > 0:
+                res = res[:, :, -int(o_h + m_h):-int(o_h), :]
+            if int(o_w) > 0:
+                res = res[:, :, :, -int(o_w + m_w):-int(o_w)]
             main = main + res
+            if main.shape[2] == 0:
+                print("faulty shape:")
+                print(main.shape)
         return main
 
 

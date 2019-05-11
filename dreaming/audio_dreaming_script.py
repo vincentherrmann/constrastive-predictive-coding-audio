@@ -2,13 +2,14 @@ import torch
 import argparse
 import datetime
 import random
-import torchaudio
+#import torchaudio
 from scipy.io.wavfile import write
 from setup_functions import *
 from configs.experiment_configs import *
 from matplotlib import pyplot as plt
 from dreaming.dreaming_functions import *
 from dreaming.streaming import *
+from ml_utilities.pytorch_utilities import *
 
 experiment = 'e18'
 name = 'snapshots_model_2019-04-14_run_1_95000'
@@ -48,7 +49,7 @@ def activation_hook(module, input, output):
 
 
 #model.autoregressive_model.module_list[4].register_forward_hook(activation_hook)
-model.encoder.blocks[1].register_forward_hook(activation_hook)
+#model.encoder.blocks[1].register_forward_hook(activation_hook)
 
 time_masking = 100
 pitch_masking = 50
@@ -64,17 +65,23 @@ audio_input = audio_input.to(dev)
 audio_input += torch.rand(1, 1, clip_length, device=dev) * 1e-6
 audio_input.requires_grad = True
 
+model.eval()
+
+#traced_model = torch.jit.trace(model, torch.ones(32, 2, 256, 629, requires_grad=True, device=dev))
+
 if torch.cuda.device_count() > 1:
     print("using", torch.cuda.device_count(), "GPUs")
     preprocessing_module = torch.nn.DataParallel(preprocessing_module).cuda()
     model = torch.nn.DataParallel(model).cuda()
-
-model.eval()
+    #traced_model = torch.nn.DataParallel(traced_model).cuda()
 
 optimizer = torch.optim.Adam([audio_input], lr=0.0005)
 scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer=optimizer, lr_lambda=lambda s: 1.05**s)
 jitter_module = Jitter([time_jitter], dims=[2], jitter_batches=32)
 jitter_loop_module = JitterLoop(output_length=input_length, dim=2, jitter_batches=32, jitter_size=64000)
+
+time_meter = AverageMeter()
+tic = time.time()
 
 for step in range(1000):
     #norm_audio_input = audio_input / torch.var(audio_input)
@@ -86,13 +93,16 @@ for step in range(1000):
     scal = mask_height_section(scal, pitch_masking)
 
     _, _, z, c = model(scal)
+    #_, _, z_o, c_o = model(scal)
 
-    target = torch.cuda.comm.gather(target_activations, dim=0, destination=torch.cuda.current_device())
-    target_activations = []
+    #target = torch.cuda.comm.gather(target_activations, dim=0, destination=torch.cuda.current_device())
+    #target_activations = []
     #loss = -torch.mean(torch.mean(target, dim=2), dim=0)[0]**2  # autoregressive channel for whole loop
     #loss = -torch.mean(torch.mean(target**2, dim=0), dim=0)[5, 0] # pitch, time
     #loss = -torch.mean(c, dim=0)[2]**2
     loss = -torch.mean(torch.mean(c, dim=0)**2)
+    #loss_o = -torch.mean(torch.mean(c_o, dim=0)**2)
+    #print("original loss:", loss_o)
 
     noise_loss = torch.clamp(scal[:, 0], -20., 100.) + 20.01
     noise_loss = torch.mean(torch.pow(torch.abs(noise_loss), 0.5))
@@ -114,8 +124,13 @@ for step in range(1000):
 
     optimizer.step()
     scheduler.step()
+    toc = time.time()
+    time_meter.update(toc-tic)
+    tic = toc
+
     print("loss:", loss.item())
     print("lr:", scheduler.get_lr())
+    print("duration:", time_meter.val)
 
     try:
         signal_data = audio_input.detach().squeeze().cpu().numpy()

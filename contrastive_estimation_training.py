@@ -3,6 +3,7 @@ import torch.nn.functional as F
 import torch.optim
 import torch.utils.data
 import random
+import time
 from audio_model import *
 from audio_dataset import *
 from sklearn import svm
@@ -33,8 +34,7 @@ def difference_score_function(predicted_z, targets):
 
 
 class ContrastiveEstimationTrainer:
-    def __init__(self, model: AudioPredictiveCodingModel, dataset, logger=None, device=None,
-                 use_all_GPUs=True,
+    def __init__(self, model, dataset, logger=None, device=None,
                  regularization=1., validation_set=None, test_task_set=None, prediction_noise=0.01,
                  optimizer=torch.optim.Adam,
                  file_batch_size=1,
@@ -42,17 +42,18 @@ class ContrastiveEstimationTrainer:
                  score_function=softplus_score_function,
                  wasserstein_gradient_penalty=False,
                  gradient_penalty_factor=10.,
-                 preprocessing=None):
+                 preprocessing=None,
+                 ar_size=256,
+                 prediction_steps=16):
         self.model = model
-        self.encoder = model.encoder
-        self.ar_size = model.ar_size
-        self.prediction_steps = self.model.prediction_steps
+        self.ar_size = ar_size
+        self.prediction_steps = prediction_steps
         self.dataset = dataset
         self.logger = logger
         self.device = device
-        if torch.cuda.device_count() > 1 and use_all_GPUs:
-            print("using", torch.cuda.device_count(), "GPUs")
-            self.model = torch.nn.DataParallel(model).cuda()
+        #if torch.cuda.device_count() > 1 and use_all_GPUs:
+        #    print("using", torch.cuda.device_count(), "GPUs")
+        #    self.model = torch.nn.DataParallel(model).cuda()
         self.regularization = regularization
         self.validation_set = validation_set
         self.test_task_set = test_task_set
@@ -66,8 +67,8 @@ class ContrastiveEstimationTrainer:
         self.wasserstein_gradient_penalty = wasserstein_gradient_penalty
         self.gradient_penalty_factor = gradient_penalty_factor
         self.preprocessing = preprocessing
-        if torch.cuda.device_count() > 1 and use_all_GPUs:
-            self.preprocessing = torch.nn.DataParallel(preprocessing).cuda()
+        #if torch.cuda.device_count() > 1 and use_all_GPUs:
+        #    self.preprocessing = torch.nn.DataParallel(preprocessing).cuda()
         print("use score function", self.score_function)
 
     def train(self,
@@ -94,6 +95,7 @@ class ContrastiveEstimationTrainer:
             print("epoch", current_epoch)
             with torch.autograd.set_detect_anomaly(True), torch.autograd.profiler.profile(use_cuda=True, enabled=profile) as prof:
                 for batch in iter(dataloader):
+                    tic = time.time()
                     batch = batch.to(device=self.device).unsqueeze(1)
                     if self.preprocessing is not None:
                         batch = self.preprocessing(batch)
@@ -166,6 +168,8 @@ class ContrastiveEstimationTrainer:
                     elif self.training_step % 1 == 0:
                         print("loss at step step " + str(self.training_step) + ":", loss.item())
 
+                    print("step", self.training_step, "duration:", time.time() - tic)
+
                     self.training_step += 1
 
                     if max_steps is not None and self.training_step >= max_steps:
@@ -213,6 +217,7 @@ class ContrastiveEstimationTrainer:
             max_steps = len(v_dataloader)
 
         for step, batch in enumerate(iter(v_dataloader)):
+            tic = time.time()
             batch = batch.to(device=self.device).unsqueeze(1)
             if self.preprocessing is not None:
                 batch = self.preprocessing(batch)
@@ -247,6 +252,8 @@ class ContrastiveEstimationTrainer:
             total_prediction_losses += prediction_losses.detach()
             total_accurate_predictions += prediction_accuracy.detach()
             total_score += torch.mean(scores).item()
+
+            #print("step", step, "duration:", time.time()-tic)
 
             if step+1 >= max_steps:
                 break

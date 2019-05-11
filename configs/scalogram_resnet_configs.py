@@ -16,7 +16,8 @@ scalogram_block_default_dict = {'in_channels': 64,
                                 'bias': True,
                                 'separable': False,
                                 'residual': True,
-                                'batch_norm': False}
+                                'batch_norm': False,
+                                'ceil_pooling': False}
 
 scalogram_resnet_default_dict = {'model': ScalogramResidualEncoder,
                                  'phase': True,

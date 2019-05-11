@@ -151,6 +151,12 @@ class AudioPredictiveCodingModel(nn.Module):
         self.prediction_model = nn.Linear(in_features=ar_size, out_features=enc_size*prediction_steps, bias=False)
         #self.group_norm = nn.GroupNorm(num_groups=prediction_steps, num_channels=enc_size*prediction_steps, affine=False)
 
+    @property
+    def item_length(self):
+        item_length = self.encoder.receptive_field
+        item_length += (self.visible_steps + self.prediction_steps) * self.encoder.downsampling_factor
+        return item_length
+
     def forward(self, x):
         z = self.encoder(x)
         targets = z[:, :, -self.prediction_steps:]  # batch, enc_size, step  # .detach()  # TODO should this be detached?
