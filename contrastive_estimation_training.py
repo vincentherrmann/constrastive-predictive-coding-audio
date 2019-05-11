@@ -168,7 +168,7 @@ class ContrastiveEstimationTrainer:
                     elif self.training_step % 1 == 0:
                         print("loss at step step " + str(self.training_step) + ":", loss.item())
 
-                    print("step", self.training_step, "duration:", time.time() - tic)
+                    #print("step", self.training_step, "duration:", time.time() - tic)
 
                     self.training_step += 1
 
