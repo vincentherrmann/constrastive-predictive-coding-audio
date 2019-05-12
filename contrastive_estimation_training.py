@@ -307,15 +307,54 @@ class ContrastiveEstimationTrainer:
         train_indices = index_list[int(num_items*evaluation_ratio):]
         eval_indices = index_list[:int(num_items*evaluation_ratio)]
 
-        classifier = svm.SVC(kernel='rbf')
-        print("fit SVM...")
-        classifier.fit(task_data[train_indices], task_labels[train_indices])
-        predictions = classifier.predict(task_data[eval_indices])
-        correct_predictions = np.equal(predictions, task_labels[eval_indices])
+        # create neural net classifier
+        classifier_model = torch.nn.Sequential(
+            torch.nn.Linear(in_features=self.ar_size, out_features=128),
+            torch.nn.ReLU(),
+            torch.nn.Linear(in_features=128, out_features=64),
+            torch.nn.ReLU(),
+            torch.nn.Linear(in_features=64, out_features=len(self.test_task_set.files))
+        )
 
-        prediction_accuracy = np.sum(correct_predictions) / len(eval_indices)
-        print("task accuracy:", prediction_accuracy)
+        if torch.cuda.device_count() > 1:
+            classifier_model = torch.nn.DataParallel(classifier_model).cuda()
+
+        train_data = torch.from_numpy(task_data[train_indices]).to(self.device)
+        train_labels = torch.from_numpy(task_labels[train_indices]).to(self.device)
+
+        eval_data = torch.from_numpy(task_data[eval_indices]).to(self.device)
+        eval_labels = torch.from_numpy(task_labels[eval_indices]).to(self.device)
+
+        batch_size = 64
+        optimizer = torch.optim.Adam(classifier_model.parameters(), lr=1e-3)
+
+        for epoch in range(10):
+            for step in range(0, train_labels.shape[0], batch_size):
+                batch_data = train_data[step:step+batch_size]
+                batch_label = train_labels[step:step+batch_size]
+
+                model_output = classifier_model(batch_data)
+                loss = F.cross_entropy(model_output, batch_label)
+                classifier_model.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+            predictions = torch.argmax(classifier_model(eval_data), dim=1)
+            correct_predictions = torch.eq(predictions, eval_labels)
+            prediction_accuracy = torch.sum(correct_predictions).item() / len(eval_indices)
+            print("task accuracy after epoch", epoch, ":", prediction_accuracy)
+
         return prediction_accuracy
+
+        # classifier = svm.SVC(kernel='rbf')
+        # print("fit SVM...")
+        # classifier.fit(task_data[train_indices], task_labels[train_indices])
+        # predictions = classifier.predict(task_data[eval_indices])
+        # correct_predictions = np.equal(predictions, task_labels[eval_indices])
+        #
+        # prediction_accuracy = np.sum(correct_predictions) / len(eval_indices)
+        # print("task accuracy:", prediction_accuracy)
+        # return prediction_accuracy
 
 
 class DeterministicSampler(torch.utils.data.Sampler):

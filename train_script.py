@@ -65,5 +65,5 @@ def main(experiment='default', name=None):
 
 if __name__ == '__main__':
     args = parser.parse_args()
-    #args.name = "model_2019-04-14_run_1"
+    #args.name = "model_2019-05-11_run_0"
     main(args.experiment, args.name)
