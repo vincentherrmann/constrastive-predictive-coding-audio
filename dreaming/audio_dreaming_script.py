@@ -3,6 +3,7 @@ import argparse
 import datetime
 import random
 #import torchaudio
+import pprint
 from scipy.io.wavfile import write
 from setup_functions import *
 from configs.experiment_configs import *
@@ -10,6 +11,8 @@ from matplotlib import pyplot as plt
 from dreaming.dreaming_functions import *
 from dreaming.streaming import *
 from ml_utilities.pytorch_utilities import *
+
+pp = pprint.PrettyPrinter(indent=4)
 
 experiment = 'e18'
 name = 'snapshots_model_2019-04-14_run_1_95000'
@@ -25,17 +28,19 @@ settings = experiments[experiment]
 if name is not None:
     settings['snapshot_config']['name'] = name
 
-model, preprocessing_module = setup_model(cqt_params=settings['cqt_config'],
-                                          encoder_params=settings['encoder_config'],
-                                          ar_params=settings['ar_model_config'],
-                                          visible_steps=settings['training_config']['visible_steps'],
-                                          prediction_steps=settings['training_config']['prediction_steps'])
+model, preprocessing_module, untraced_model = setup_model(cqt_params=settings['cqt_config'],
+                                                          encoder_params=settings['encoder_config'],
+                                                          ar_params=settings['ar_model_config'],
+                                                          trainer_args=settings['training_config'],
+                                                          device=dev)
 
 settings['snapshot_config']['snapshot_location'] = '../snapshots'
 model, snapshot_manager, continue_training_at_step = setup_snapshot_manager(model=model,
                                                                             args_dict=settings['snapshot_config'],
                                                                             try_proceeding=True,
                                                                             load_to_cpu=(dev == 'cpu'))
+
+pp.pprint(model)
 
 server = LoopStreamServer(port=8765, message_length=128000)
 server.start_server()

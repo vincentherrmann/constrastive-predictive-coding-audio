@@ -2,10 +2,14 @@ import torch
 import argparse
 import datetime
 import random
+import pprint
+
 from setup_functions import *
 from configs.experiment_configs import *
 from matplotlib import pyplot as plt
 from dreaming.dreaming_functions import *
+
+pp = pprint.PrettyPrinter(indent=4)
 
 experiment = 'e18'
 name = 'snapshots_model_2019-04-14_run_1_95000'
@@ -28,6 +32,8 @@ model, snapshot_manager, continue_training_at_step = setup_snapshot_manager(mode
                                                                             args_dict=settings['snapshot_config'],
                                                                             try_proceeding=True,
                                                                             load_to_cpu=(dev == 'cpu'))
+
+pp.pprint(model)
 
 audio_input = torch.randn(1, 1, model.encoder.receptive_field + model.encoder.downsampling_factor * (model.visible_steps + model.prediction_steps)) * 0.1
 scalogram_input = preprocessing_module(audio_input)

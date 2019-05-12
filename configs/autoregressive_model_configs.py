@@ -26,6 +26,9 @@ ar_conv_architecture_2['pooling'] = [1, 1, 2, 1, 2, 1]
 ar_conv_architecture_2['batch_norm'] = True
 ar_conv_architecture_2['residual'] = True
 
+ar_conv_architecture_3 = ar_conv_architecture_2.copy()
+ar_conv_architecture_3['channel_count'] = [512, 512, 512, 256, 256, 256, 256]
+
 
 ar_block_default_dict = scalogram_block_default_dict.copy()
 ar_block_default_dict['in_channels'] = 256
