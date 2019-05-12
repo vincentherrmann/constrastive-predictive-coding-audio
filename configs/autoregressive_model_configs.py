@@ -28,6 +28,7 @@ ar_conv_architecture_2['residual'] = True
 
 ar_conv_architecture_3 = ar_conv_architecture_2.copy()
 ar_conv_architecture_3['channel_count'] = [512, 512, 512, 256, 256, 256, 256]
+ar_conv_architecture_3['encoding_size'] = 512
 
 
 ar_block_default_dict = scalogram_block_default_dict.copy()
