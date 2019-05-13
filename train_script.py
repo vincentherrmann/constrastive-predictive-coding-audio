@@ -59,7 +59,7 @@ def main(experiment='default', name=None):
     trainer.train(batch_size=settings['training_config']['train_batch_size'],
                   epochs=settings['training_config']['max_epochs'],
                   lr=settings['training_config']['learning_rate'],
-                  num_workers=8,
+                  num_workers=4,
                   continue_training_at_step=continue_training_at_step)
 
 

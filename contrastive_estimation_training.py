@@ -258,6 +258,8 @@ class ContrastiveEstimationTrainer:
             if step+1 >= max_steps:
                 break
 
+        del v_dataloader
+
         total_prediction_losses /= max_steps
         total_accurate_predictions /= max_steps
         total_score /= max_steps
@@ -293,6 +295,7 @@ class ContrastiveEstimationTrainer:
             task_data[step*batch_size:(step+1)*batch_size, :] = c.detach().cpu()
             task_labels[step*batch_size:(step+1)*batch_size] = labels.detach()
 
+        del t_dataloader
 
         task_data = task_data.detach().numpy()
         task_labels = task_labels.detach().numpy()

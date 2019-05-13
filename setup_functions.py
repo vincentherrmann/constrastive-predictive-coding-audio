@@ -40,7 +40,7 @@ class CPCLogger(TensorboardLogger):
         task_thread.start()
 
         losses, accuracies, mean_score, mmi_lb = self.trainer.validate(batch_size=self.validation_batch_size,
-                                                                       num_workers=8,
+                                                                       num_workers=4,
                                                                        max_steps=self.max_validation_steps)
 
         self.writer.add_scalar("score mean", mean_score, self.trainer.training_step)
