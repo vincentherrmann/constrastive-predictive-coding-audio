@@ -233,13 +233,12 @@ class ContrastiveEstimationTrainer:
                 valid_scores = torch.diagonal(scores, dim1=0, dim2=2)  # data_step, target_step, batch
                 valid_scores = torch.diagonal(valid_scores, dim1=0, dim2=1)  # batch, step
             else:
-                scores = torch.diagonal(scores, dim1=1, dim2=3).permute(
-                    [0, 2, 1]).contiguous()  # data_batch, step, target_batch
+                scores = torch.diagonal(scores, dim1=1, dim2=3).permute([0, 2, 1]).contiguous()  # data_batch, step, target_batch
                 noise_scoring = torch.logsumexp(scores.view(-1, batch_size, self.prediction_steps),
                                                 dim=0)  # target_batch, target_step
                 valid_scores = torch.diagonal(scores, dim1=0, dim2=2).permute([1, 0])  # batch, step
 
-            prediction_losses = -torch.mean(valid_scores - noise_scoring, dim=1)
+            prediction_losses = -torch.mean(valid_scores - noise_scoring, dim=0)
             loss = torch.mean(prediction_losses)
 
             # calculate prediction accuracy as the proportion of scores that are highest for the correct target
