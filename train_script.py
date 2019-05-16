@@ -8,7 +8,7 @@ from configs.experiment_configs import *
 pp = pprint.PrettyPrinter(indent=4)
 
 #default_experiment = 'default'
-default_experiment = 'e22'
+default_experiment = 'e24'
 run = 'run_0'
 
 parser = argparse.ArgumentParser(description='Contrastive Predictive Coding Training')
