@@ -115,7 +115,7 @@ class ContrastiveEstimationTrainer:
                     else:
                         scores = torch.diagonal(scores, dim1=1, dim2=3).permute([0, 2, 1]).contiguous()  # data_batch, step, target_batch
                         noise_scoring = torch.logsumexp(scores.view(-1, batch_size, self.prediction_steps),
-                                                        dim=0).permute([1, 0])  # target_batch, target_step
+                                                        dim=0)  # target_batch, target_step
                         valid_scores = torch.diagonal(scores, dim1=0, dim2=2).permute([1, 0])  # batch, step
 
                     prediction_losses = -torch.mean(valid_scores - noise_scoring, dim=1)
