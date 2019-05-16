@@ -111,7 +111,7 @@ experiments['e22']['ar_model_config'] = autoregressive_model_configs.ar_conv_arc
 experiments['e23'] = experiments['e22'].copy()
 experiments['e23']['training_config']['wasserstein_gradient_penalty'] = False
 
-experiments['e24'] = experiments['e24'].copy()
+experiments['e24'] = experiments['e23'].copy()
 experiments['e24']['training_config']['train_batch_size'] = 64
 
 
