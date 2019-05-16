@@ -88,7 +88,7 @@ experiments['e16'] = experiments['e15'].copy()
 experiments['e16']['ar_model_config'] = autoregressive_model_configs.ar_conv_architecture_2
 
 experiments['e17'] = experiments['e16'].copy()
-experiments['e17']['training_config']['sum_over_all_timesteps'] = False
+#experiments['e17']['training_config']['sum_over_all_timesteps'] = False
 experiments['e17']['training_config']['file_batch_size'] = 8
 
 experiments['e18'] = experiments['e17'].copy()
@@ -115,7 +115,7 @@ experiments['e24'] = experiments['e23'].copy()
 experiments['e24']['training_config']['train_batch_size'] = 64
 
 experiments['e25'] = experiments['e23'].copy()
-experiments['e25']['training_config']['score_over_all_timesteps'] = True
+experiments['e25']['training_config']['score_over_all_timesteps'] = False
 
 
 experiments['c1'] = classification_default_dict
