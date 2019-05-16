@@ -3,6 +3,8 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 
+from collections import OrderedDict
+
 encoder_default_dict = {'strides': [5, 4, 2, 2, 2],
                         'kernel_sizes': [10, 8, 4, 4, 4],
                         'channel_count': [512, 512, 512, 512, 512],
@@ -76,8 +78,21 @@ class AudioGRUModel(nn.Module):
 
 
 class ConvolutionalArBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, pooling=1, stride=1, bias=True, residual=False, batch_norm=False):
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 kernel_size,
+                 pooling=1,
+                 stride=1,
+                 bias=True,
+                 residual=False,
+                 batch_norm=False,
+                 name='ar_block',
+                 activation_register=None):
         super().__init__()
+
+        self.name = name
+
         self.main_modules = nn.ModuleList()
         if pooling > 1:
             self.main_modules.append(nn.MaxPool1d(pooling, ceil_mode=True))
@@ -91,6 +106,11 @@ class ConvolutionalArBlock(nn.Module):
 
         self.main_modules.append(nn.ReLU())
 
+        if activation_register is not None:
+            self.main_modules.append(ActivationWriter(register=activation_register,
+                                                      name=self.name + '_main_conv',
+                                                      writing_condition=cuda0_writing_condition))
+
         self.residual_modules = None
 
         self.residual = residual
@@ -102,6 +122,10 @@ class ConvolutionalArBlock(nn.Module):
                 self.residual_modules.append(nn.Conv1d(in_channels=in_channels,
                                                        out_channels=out_channels,
                                                        kernel_size=1))
+
+                if activation_register is not None:
+                    self.main_modules.append(ActivationWriter(register=activation_register,
+                                                              name=self.name + '_residual_conv'))
 
     def forward(self, x):
         original_x = x
@@ -128,7 +152,9 @@ class ConvolutionalArModel(nn.Module):
                                                          pooling=args_dict['pooling'][l],
                                                          bias=args_dict['bias'],
                                                          batch_norm=args_dict['batch_norm'],
-                                                         residual=args_dict['residual']))
+                                                         residual=args_dict['residual'],
+                                                         name='ar_block_' + str(l),
+                                                         activation_register=args_dict['activation_register']))
 
         self.encoding_size = args_dict['channel_count'][0]
         self.ar_size = args_dict['channel_count'][-1]
@@ -176,6 +202,46 @@ class AudioPredictiveCodingModel(nn.Module):
         return total_parameters
 
 
+class ActivationRegister:
+    def __init__(self, writing_condition=None, clone_activations=False, batch_filter=None, move_to_cpu=False):
+        self.activations = OrderedDict()
+        self.active = True
+        self.writing_condition = writing_condition
+        self.clone_activations = clone_activations
+        self.batch_filter = batch_filter
+        self.move_to_cpu = move_to_cpu
+
+    def write_activation(self, name, value):
+        if not self.active:
+            return
+
+        if self.writing_condition is not None:
+            if not self.writing_condition(value):
+                return
+
+        if self.batch_filter is not None:
+            value = value[self.batch_filter]
+
+        if self.move_to_cpu:
+            value = value.cpu()
+
+        if self.clone_activations:
+            value = value.clone()
+
+        self.activations[name] = value
+
+
+class ActivationWriter(nn.Module):
+    def __init__(self, register, name):
+        super().__init__()
+        self.register = register
+        self.name = name
+
+    def forward(self, x):
+        self.register.write_activation(self.name, x)
+        return x
+
+
 def load_to_cpu(path):
     model = torch.load(path, map_location=lambda storage, loc: storage)
     model.cpu()
@@ -187,3 +253,13 @@ def num_parameters(model):
     for p in model.parameters():
         total_parameters += np.prod(p.shape)
     return total_parameters
+
+
+def cuda0_writing_condition(x):
+    """
+    Write only if x is on the CPU or the first GPU
+    """
+    if x.device.type == 'cuda':
+        return x.device.index == 0
+
+    return True

@@ -12,7 +12,8 @@ ar_conv_default_dict = {
     'batch_norm': False,
     'residual': False,
     'encoding_size': 256,
-    'ar_code_size': 256
+    'ar_code_size': 256,
+    'activation_register': None
 }
 
 ar_conv_architecture_1 = ar_conv_default_dict.copy()

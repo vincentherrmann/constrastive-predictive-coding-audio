@@ -23,7 +23,8 @@ scalogram_resnet_default_dict = {'model': ScalogramResidualEncoder,
                                  'phase': True,
                                  'blocks': [scalogram_block_default_dict,
                                             scalogram_block_default_dict,
-                                            scalogram_block_default_dict]}
+                                            scalogram_block_default_dict],
+                                 'activation_register': None}
 
 block_3x3 = scalogram_block_default_dict.copy()
 block_3x3['padding_1'] = 1

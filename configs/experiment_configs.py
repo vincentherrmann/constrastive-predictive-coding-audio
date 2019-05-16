@@ -114,6 +114,9 @@ experiments['e23']['training_config']['wasserstein_gradient_penalty'] = False
 experiments['e24'] = experiments['e23'].copy()
 experiments['e24']['training_config']['train_batch_size'] = 64
 
+experiments['e25'] = experiments['e23'].copy()
+experiments['e25']['training_config']['score_over_all_timesteps'] = True
+
 
 experiments['c1'] = classification_default_dict
 experiments['c1']['training_config']['learning_rate'] = 1e-3

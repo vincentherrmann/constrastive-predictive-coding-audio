@@ -6,6 +6,7 @@ import time
 from scipy.special import gamma
 
 from constant_q_transform import *
+from audio_model import ActivationRegister, ActivationWriter, cuda0_writing_condition
 
 scalogram_encoder_default_dict = {'kernel_sizes': [(127, 1), (5, 5), (63, 1), (5, 5), (26, 1), (5, 5)],
                                   'top_padding': [126, 0, 0, 0, 0, 0],
@@ -348,8 +349,11 @@ default_encoder_block_dict = {'in_channels': 64,
 
 
 class ScalogramEncoderBlock(nn.Module):
-    def __init__(self, args_dict=default_encoder_block_dict):
+    def __init__(self, args_dict=default_encoder_block_dict,
+                 name='scalogram_block', activation_register=None):
         super().__init__()
+
+        self.name = name
 
         #   +--------------- pooling -- conv_1x1 ----------------+
         #   |                                                    |
@@ -380,6 +384,10 @@ class ScalogramEncoderBlock(nn.Module):
 
         self.main_modules.append(nn.ReLU())
 
+        if activation_register is not None:
+            self.main_modules.append(ActivationWriter(register=activation_register,
+                                                      name=self.name + '_main_conv_1'))
+
         if args_dict['top_padding_2'] is not None:
             self.main_modules.append(nn.ZeroPad2d((0, 0, args_dict['top_padding_2'], 0)))
 
@@ -397,6 +405,10 @@ class ScalogramEncoderBlock(nn.Module):
             self.main_modules.append(nn.MaxPool2d(kernel_size=args_dict['pooling_2'],
                                                   ceil_mode=args_dict['ceil_pooling']))
 
+        if activation_register is not None:
+            self.main_modules.append(ActivationWriter(register=activation_register,
+                                                      name=self.name + '_main_conv_2'))
+
         self.residual = args_dict['residual']
         if self.residual:
             self.residual_modules = nn.ModuleList()
@@ -411,6 +423,10 @@ class ScalogramEncoderBlock(nn.Module):
                                                        kernel_size=1,
                                                        padding=args_dict['padding_1']+args_dict['padding_2'],
                                                        bias=False))
+
+                if activation_register is not None:
+                    self.main_modules.append(ActivationWriter(register=activation_register,
+                                                              name=self.name + '_residual_conv'))
 
     def forward(self, x):
         original_input = x
@@ -465,7 +481,9 @@ class ScalogramResidualEncoder(nn.Module):
 
         self.blocks = nn.ModuleList()
         for i, block_dict in enumerate(args_dict['blocks']):
-            self.blocks.append(ScalogramEncoderBlock(block_dict))
+            self.blocks.append(ScalogramEncoderBlock(block_dict,
+                                                     name='scalogram_block_' + str(i),
+                                                     activation_register=args_dict['activation_register']))
 
             self.receptive_field += (block_dict['kernel_size_1'][1] - 1) * self.downsampling_factor
             self.downsampling_factor *= block_dict['pooling_1'] * block_dict['stride_1']
@@ -535,6 +553,3 @@ def lowpass_init(tensor, factor=10.):
         fft *= fft_filter.unsqueeze(1)
         ifft = torch.irfft(fft, 1, normalized=False)[:, :size].view(out_channels, in_channels, size, 1)
         tensor[:] = ifft * np.sqrt(2 / (in_channels * size))
-
-
-

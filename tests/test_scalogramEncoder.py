@@ -152,7 +152,9 @@ class TestScalogramEncoder(TestCase):
         print("finished")
 
     def test_resnet_architecture(self):
-        encoder = ScalogramResidualEncoder(args_dict=scalogram_resnet_architecture_6, verbose=2)
+        args = scalogram_resnet_architecture_7
+        args['activation_register'] = ActivationRegister(batch_filter=0)
+        encoder = ScalogramResidualEncoder(args_dict=args, verbose=2)
         tic = time.time()
         test_result = encoder(torch.rand(1, 2, 256, encoder.receptive_field + 60*encoder.downsampling_factor))
         print("encoder time:", time.time() - tic)
