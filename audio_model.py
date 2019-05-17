@@ -108,8 +108,7 @@ class ConvolutionalArBlock(nn.Module):
 
         if activation_register is not None:
             self.main_modules.append(ActivationWriter(register=activation_register,
-                                                      name=self.name + '_main_conv',
-                                                      writing_condition=cuda0_writing_condition))
+                                                      name=self.name + '_main_conv'))
 
         self.residual_modules = None
 
@@ -166,7 +165,8 @@ class ConvolutionalArModel(nn.Module):
 
 
 class AudioPredictiveCodingModel(nn.Module):
-    def __init__(self, encoder, autoregressive_model, enc_size, ar_size, visible_steps=100, prediction_steps=12):
+    def __init__(self, encoder, autoregressive_model, enc_size, ar_size, visible_steps=100, prediction_steps=12,
+                 activation_register=None):
         super().__init__()
         self.enc_size = enc_size
         self.ar_size = ar_size
@@ -175,6 +175,16 @@ class AudioPredictiveCodingModel(nn.Module):
         self.encoder = encoder
         self.autoregressive_model = autoregressive_model
         self.prediction_model = nn.Linear(in_features=ar_size, out_features=enc_size*prediction_steps, bias=False)
+        self.activation_register = activation_register
+
+        self.input_activation_writer = ActivationWriter(register=self.activation_register,
+                                                        name='scalogram')
+        self.z_activation_writer = ActivationWriter(register=self.activation_register,
+                                                    name='z_code')
+        self.c_activation_writer = ActivationWriter(register=self.activation_register,
+                                                    name='c_code')
+        self.prediction_activation_writer = ActivationWriter(register=self.activation_register,
+                                                             name='prediction')
         #self.group_norm = nn.GroupNorm(num_groups=prediction_steps, num_channels=enc_size*prediction_steps, affine=False)
 
     @property
@@ -184,14 +194,24 @@ class AudioPredictiveCodingModel(nn.Module):
         return item_length
 
     def forward(self, x):
+        x = self.input_activation_writer(x)
+
         z = self.encoder(x)
         targets = z[:, :, -self.prediction_steps:]  # batch, enc_size, step  # .detach()  # TODO should this be detached?
         z = z[:, :, -(self.visible_steps+self.prediction_steps):-self.prediction_steps]
+
+        z = self.z_activation_writer(z)
+
         c = self.autoregressive_model(z)
         if len(c.shape) == 3:
             c = c[:, :, 0]
+
+        c = self.c_activation_writer(c)
+
         predicted_z = self.prediction_model(c)  # batch, step*enc_size
         predicted_z = predicted_z.view(-1, self.prediction_steps, self.enc_size)  # batch, step, enc_size
+
+        predicted_z = self.prediction_activation_writer(predicted_z)
 
         return predicted_z, targets, z, c
 
@@ -238,7 +258,8 @@ class ActivationWriter(nn.Module):
         self.name = name
 
     def forward(self, x):
-        self.register.write_activation(self.name, x)
+        if self.register is not None:
+            self.register.write_activation(self.name, x)
         return x
 
 

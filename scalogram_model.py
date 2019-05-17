@@ -480,6 +480,7 @@ class ScalogramResidualEncoder(nn.Module):
             self.downsampling_factor = preprocessing_module.downsampling_factor
 
         self.blocks = nn.ModuleList()
+
         for i, block_dict in enumerate(args_dict['blocks']):
             self.blocks.append(ScalogramEncoderBlock(block_dict,
                                                      name='scalogram_block_' + str(i),

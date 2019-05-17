@@ -72,7 +72,10 @@ def setup_model(cqt_params=cqt_default_dict,
                 visible_steps=60,
                 prediction_steps=16,
                 trace_model=False,
-                use_all_GPUs=True):
+                use_all_GPUs=True,
+                activation_register=None):
+    encoder_params['activation_register'] = activation_register
+    ar_params['activation_register'] = activation_register
     preprocessing_module = PreprocessingModule(cqt_dict=cqt_params,
                                                phase=encoder_params['phase'])
     encoder = encoder_params['model'](args_dict=encoder_params,
@@ -83,7 +86,8 @@ def setup_model(cqt_params=cqt_default_dict,
                                           enc_size=ar_params['encoding_size'],
                                           ar_size=ar_params['ar_code_size'],
                                           visible_steps=trainer_args['visible_steps'],
-                                          prediction_steps=trainer_args['prediction_steps'])
+                                          prediction_steps=trainer_args['prediction_steps'],
+                                          activation_register=activation_register)
 
     untraced_model = pc_model
 
