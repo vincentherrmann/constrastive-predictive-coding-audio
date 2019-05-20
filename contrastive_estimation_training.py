@@ -190,7 +190,7 @@ class ContrastiveEstimationTrainer:
         v_dataloader = torch.utils.data.DataLoader(self.validation_set,
                                                    batch_sampler=sampler,
                                                    num_workers=num_workers,
-                                                   pin_memory=True)
+                                                   pin_memory=False)
 
         total_prediction_losses = torch.zeros(self.prediction_steps, requires_grad=False).to(device=self.device)
         total_accurate_predictions = torch.zeros(self.prediction_steps, requires_grad=False).to(device=self.device)
@@ -283,7 +283,7 @@ class ContrastiveEstimationTrainer:
         t_dataloader = torch.utils.data.DataLoader(self.test_task_set,
                                                    batch_size=batch_size,
                                                    num_workers=num_workers,
-                                                   pin_memory=True)
+                                                   pin_memory=False)
         for step, (batch, labels) in enumerate(iter(t_dataloader)):
             #print("step", step)
             batch = batch.to(device=self.device).unsqueeze(1)
