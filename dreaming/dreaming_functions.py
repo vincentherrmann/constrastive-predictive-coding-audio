@@ -2,6 +2,7 @@ import random
 import math
 import torch
 import torch.nn.functional as F
+import numpy as np
 from matplotlib import pyplot as plt
 
 
@@ -65,12 +66,13 @@ class Jitter(torch.nn.Module):
 
 
 class JitterLoop(torch.nn.Module):
-    def __init__(self, output_length, dim, jitter_size=None, jitter_batches=1):
+    def __init__(self, output_length, dim, jitter_size=None, jitter_batches=1, first_batch_without_jitter=True):
         super().__init__()
         self.output_length = output_length
         self.dim = dim
         self.jitter_batches = jitter_batches
         self.jitter_size = jitter_size
+        self.first_batch_without_jitter = first_batch_without_jitter
 
     def forward(self, x):
         if x.shape[0] == 1 and self.jitter_batches > 1:
@@ -92,6 +94,9 @@ class JitterLoop(torch.nn.Module):
 
         indices = torch.arange(self.output_length).unsqueeze(0).repeat(jitter_batches, 1)
         offset = torch.randint(jitter_size, size=[jitter_batches]).unsqueeze(1)
+
+        if self.first_batch_without_jitter:
+            offset[0] = 0
 
         indices += offset
 
@@ -197,3 +202,44 @@ def spectral_local_response_normalization(x, size=3, n_fft=512):
     padding_length = (normalized_x.shape[1] - x.shape[1]) // 2
     normalized_x = normalized_x[:, :x.shape[1]]
     return normalized_x
+
+
+def activation_downsampling(activation_dict, target_length):
+    activation_dict = activation_dict.copy()
+    for key, value in activation_dict.items():
+        if key == 'c_code' or key == 'prediction':
+            continue
+        dim = len(value.shape) - 1
+        downsampling_factor = int(value.shape[dim] / target_length)
+        if downsampling_factor > 1:
+            unsqueeze = len(value.shape) == 2
+            if unsqueeze:
+                value = value.unsqueeze(1)
+            activation_dict[key] = F.avg_pool1d(value, kernel_size=downsampling_factor)
+            if unsqueeze:
+                value.squeeze(1)
+
+    return activation_dict
+
+
+def convert_activation_dict_type(activation_dict, dtype=np.float32):
+    for key, value in activation_dict.items():
+        activation_dict[key] = value.detach().cpu().numpy().astype(dtype)
+    return activation_dict
+
+
+def interpolate_position(x, pos, dim=None):
+    if dim is None:
+        dim = len(x.shape) - 1
+
+    length = x.shape[dim]
+    if length == 1:
+        return torch.index_select(x, dim=dim, index=torch.LongTensor(0))
+
+    pos = min(max(0., pos), 1.)
+    idx = int(pos*length)
+    interp = pos*length - idx
+
+    a = torch.index_select(x, dim=dim, index=torch.LongTensor(idx))
+    b = torch.index_select(x, dim=dim, index=torch.LongTensor(idx + 1))
+    return (1 - interp) * a + interp * b

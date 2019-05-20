@@ -106,10 +106,6 @@ class ConvolutionalArBlock(nn.Module):
 
         self.main_modules.append(nn.ReLU())
 
-        if activation_register is not None:
-            self.main_modules.append(ActivationWriter(register=activation_register,
-                                                      name=self.name + '_main_conv'))
-
         self.residual_modules = None
 
         self.residual = residual
@@ -122,9 +118,8 @@ class ConvolutionalArBlock(nn.Module):
                                                        out_channels=out_channels,
                                                        kernel_size=1))
 
-                if activation_register is not None:
-                    self.main_modules.append(ActivationWriter(register=activation_register,
-                                                              name=self.name + '_residual_conv'))
+        self.output_activation_writer = ActivationWriter(register=activation_register,
+                                                         name=self.name)
 
     def forward(self, x):
         original_x = x
@@ -136,6 +131,8 @@ class ConvolutionalArBlock(nn.Module):
             for m in self.residual_modules:
                 x = m(x)
             main_x += x[:, :, -main_x.shape[2]:]
+
+        self.output_activation_writer(main_x)
         return main_x
 
 

@@ -384,9 +384,8 @@ class ScalogramEncoderBlock(nn.Module):
 
         self.main_modules.append(nn.ReLU())
 
-        if activation_register is not None:
-            self.main_modules.append(ActivationWriter(register=activation_register,
-                                                      name=self.name + '_main_conv_1'))
+        self.main_modules.append(ActivationWriter(register=activation_register,
+                                                  name=self.name + '_main_conv_1'))
 
         if args_dict['top_padding_2'] is not None:
             self.main_modules.append(nn.ZeroPad2d((0, 0, args_dict['top_padding_2'], 0)))
@@ -405,9 +404,10 @@ class ScalogramEncoderBlock(nn.Module):
             self.main_modules.append(nn.MaxPool2d(kernel_size=args_dict['pooling_2'],
                                                   ceil_mode=args_dict['ceil_pooling']))
 
-        if activation_register is not None:
-            self.main_modules.append(ActivationWriter(register=activation_register,
-                                                      name=self.name + '_main_conv_2'))
+        self.main_modules.append(nn.ReLU())
+
+        self.main_modules.append(ActivationWriter(register=activation_register,
+                                                  name=self.name + '_main_conv_2'))
 
         self.residual = args_dict['residual']
         if self.residual:
@@ -424,9 +424,8 @@ class ScalogramEncoderBlock(nn.Module):
                                                        padding=args_dict['padding_1']+args_dict['padding_2'],
                                                        bias=False))
 
-                if activation_register is not None:
-                    self.main_modules.append(ActivationWriter(register=activation_register,
-                                                              name=self.name + '_residual_conv'))
+        self.output_activation_writer = ActivationWriter(register=activation_register,
+                                                         name=self.name + '_main_conv_2')
 
     def forward(self, x):
         original_input = x
@@ -453,6 +452,9 @@ class ScalogramEncoderBlock(nn.Module):
             if main.shape[2] == 0:
                 print("faulty shape:")
                 print(main.shape)
+
+        self.output_activation_writer(main)
+
         return main
 
 

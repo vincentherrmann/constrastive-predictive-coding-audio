@@ -1,4 +1,5 @@
 import socket
+import socketserver
 import time
 #import pyaudio
 import numpy as np
@@ -123,3 +124,139 @@ class LoopStreamClient:
     def stop(self):
         self.stream = False
         self.streaming_thread.join()
+
+
+class SocketDataExchange:
+    def __init__(self):
+        self.sending_thread = threading.Thread()
+        self.receiving_thread = threading.Thread()
+        self.receive_lock = threading.Lock()
+        self.send_lock = threading.Lock()
+        self.received_data = None
+        self.sending_data = None
+        self.stream = False
+        self.new_data_available = False
+        self.sending_data_available = False
+        self.connection = None
+        self.chunk_size = 4096
+
+    def receive(self):
+        while self.stream:
+            message_length = int.from_bytes(self.connection.recv(64), byteorder='big', signed=False)
+            data = io.BytesIO()
+            while message_length > 0:
+                receive_size = min(self.chunk_size, message_length)
+                chunk = self.connection.recv(receive_size)
+                data.write(chunk)
+                message_length -= receive_size
+
+            with self.receive_lock:
+                print("message received")
+                self.received_data = data.getvalue()
+                self.new_data_available = True
+
+    def get_received_data(self):
+        with self.receive_lock:
+            if self.new_data_available:
+                self.new_data_available = False
+                return self.received_data
+        return None
+
+    def send(self):
+        while self.sending_data_available:
+            with self.send_lock:
+                self.sending_data_available = False
+                data = self.sending_data
+            message_length = len(data).to_bytes(64, byteorder='big', signed=False)
+            self.connection.send(message_length)
+            print("sending message with size", len(data))
+            self.connection.sendall(data)
+
+    def set_new_data(self, data):
+        with self.send_lock:
+            self.sending_data_available = True
+            self.sending_data = data
+        if not self.sending_thread.isAlive():
+            self.sending_thread = threading.Thread(target=self.send)
+            self.sending_thread.daemon = True
+            self.sending_thread.start()
+
+    def start(self):
+        if self.connection is None:
+            print("can't start streaming without connection")
+            return
+        self.stream = True
+        self.receiving_thread = threading.Thread(target=self.receive)
+        self.receiving_thread.daemon = True
+        self.receiving_thread.start()
+        print("streaming is active")
+
+    def stop(self):
+        self.stream = False
+        try:
+            self.receiving_thread.join(timeout=0.5)
+        except:
+            pass
+
+        try:
+            self.sending_thread.join(timeout=0.5)
+        except:
+            pass
+
+
+class SocketDataExchangeServer(SocketDataExchange):
+    def __init__(self, port, host='127.0.0.1', stream_automatically=True):
+        super().__init__()
+        self.port = port
+        self.host = host
+        self.socket = socket.socket()
+        self.stream_automatically = stream_automatically
+
+        connect_thread = threading.Thread(target=self.connect_to_client)
+        connect_thread.daemon = True
+        connect_thread.start()
+
+    def connect_to_client(self):
+        try:
+            self.socket.bind((self.host, self.port))
+            print("server created")
+        except:
+            print("server cannot bind")
+            return
+        self.socket.listen(1)
+
+        conn, address = self.socket.accept()
+        print("Connection from " + address[0] + ":" + str(address[1]))
+        self.connection = conn
+
+        if self.stream_automatically:
+            self.start()
+
+    def stop(self):
+        super().stop()
+        self.socket.close()
+
+
+class SocketDataExchangeClient(SocketDataExchange):
+    def __init__(self, port, host='127.0.0.1', stream_automatically=True):
+        super().__init__()
+        self.port = port
+        self.host = host
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.stream_automatically = stream_automatically
+
+        try:
+            self.socket.connect((self.host, self.port))
+            self.connection = self.socket
+            print("client has successfully connected")
+        except:
+            print("client can't connect")
+            return
+
+        if self.stream_automatically:
+            self.start()
+
+    def stop(self):
+        super().stop()
+        self.socket.close()
+

@@ -23,6 +23,8 @@ class TestExperiments(TestCase):
                                                                      device=dev,
                                                                      activation_register=register)
 
+        pprint.pprint(pc_model)
+
         dummy_batch = torch.randn(2, 1, untraced_model.item_length)
         if preprocessing_module is not None:
             dummy_batch = preprocessing_module(dummy_batch)

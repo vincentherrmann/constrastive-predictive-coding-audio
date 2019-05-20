@@ -2,6 +2,7 @@ import torch
 import argparse
 import datetime
 import random
+import pickle
 #import torchaudio
 import pprint
 from scipy.io.wavfile import write
@@ -14,8 +15,8 @@ from ml_utilities.pytorch_utilities import *
 
 pp = pprint.PrettyPrinter(indent=4)
 
-experiment = 'e18'
-name = 'snapshots_model_2019-04-14_run_1_95000'
+experiment = 'e26'
+name = 'snapshots_model_2019-05-17_run_0_85000'
 
 try:
     dev = 'cuda:' + str(torch.cuda.current_device())
@@ -28,39 +29,43 @@ settings = experiments[experiment]
 if name is not None:
     settings['snapshot_config']['name'] = name
 
+register = ActivationRegister(batch_filter=0)
+
 model, preprocessing_module, untraced_model = setup_model(cqt_params=settings['cqt_config'],
                                                           encoder_params=settings['encoder_config'],
                                                           ar_params=settings['ar_model_config'],
                                                           trainer_args=settings['training_config'],
-                                                          device=dev)
+                                                          device=dev,
+                                                          activation_register=register)
 
 settings['snapshot_config']['snapshot_location'] = '../snapshots'
-model, snapshot_manager, continue_training_at_step = setup_snapshot_manager(model=model,
+loaded_model, snapshot_manager, continue_training_at_step = setup_snapshot_manager(model=model,
                                                                             args_dict=settings['snapshot_config'],
                                                                             try_proceeding=True,
                                                                             load_to_cpu=(dev == 'cpu'))
 
+#model.load_state_dict(loaded_model.module.state_dict())
+
+#if dev == 'cpu':
+#    model = model.module
+
 pp.pprint(model)
 
-server = LoopStreamServer(port=8765, message_length=128000)
-server.start_server()
-
-print("server started")
-
-target_activations = []
-
-def activation_hook(module, input, output):
-    target_activations.append(output)
-
-
-#model.autoregressive_model.module_list[4].register_forward_hook(activation_hook)
-#model.encoder.blocks[1].register_forward_hook(activation_hook)
+server = SocketDataExchangeServer(port=2222) #LoopStreamServer(port=8765, message_length=128000)
+#server.start_server()
 
 time_masking = 100
 pitch_masking = 50
 time_jitter = 0
-input_length = model.encoder.receptive_field
-input_length += model.encoder.downsampling_factor * (model.visible_steps + model.prediction_steps)
+#input_length = model.encoder.receptive_field
+#input_length += model.encoder.downsampling_factor * (model.visible_steps + model.prediction_steps)
+try:
+    input_length = model.item_length
+except:
+    try:
+        input_length = model.module.item_length
+    except:
+        raise
 input_length += time_jitter
 
 clip_length = 64000
@@ -138,10 +143,17 @@ for step in range(1000):
     print("duration:", time_meter.val)
 
     try:
+        activations = activation_downsampling(register.activations, target_length=60)
+        activations = convert_activation_dict_type(activations)
+        data_dict = {'activations': activations}
+
         signal_data = audio_input.detach().squeeze().cpu().numpy()
         signal_data /= np.max(signal_data)
         signal_data *= 32000.
-        server.set_data(signal_data.astype(np.int16).tobytes())
+        data_dict['audio'] = signal_data.astype(np.int16)
+
+        data = pickle.dumps(data_dict)
+        server.set_new_data(data)
     except:
         raise
         #pass
