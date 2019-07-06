@@ -17,7 +17,7 @@ class LoopStreamServer:
         self.current_data = None
         self.stream = False
         self.message_length = message_length
-        self.chunk_size = 4096
+        self.chunk_size = 16384
 
     def start_server(self):
         self.stream = True
@@ -74,7 +74,7 @@ class LoopStreamClient:
         self.new_data_available = False
         self.message_length = message_length
         self.position_in_message = 0
-        self.chunk_size = 4096
+        self.chunk_size = 16384
 
     def start_client(self):
         self.stream = True
@@ -138,21 +138,46 @@ class SocketDataExchange:
         self.new_data_available = False
         self.sending_data_available = False
         self.connection = None
-        self.chunk_size = 4096
+        self.chunk_size = 16384
 
     def receive(self):
         while self.stream:
             message_length = int.from_bytes(self.connection.recv(64), byteorder='big', signed=False)
-            data = io.BytesIO()
+            target_data_length = message_length
+            print("receiving message with size", message_length)
+            if message_length == 0:
+                continue
+            data_io = io.BytesIO()
+            data_writer = io.BufferedWriter(data_io, message_length)
+            chunk_number = 0
             while message_length > 0:
                 receive_size = min(self.chunk_size, message_length)
                 chunk = self.connection.recv(receive_size)
-                data.write(chunk)
+                data_writer.write(chunk)
+                receive_size = len(chunk)
                 message_length -= receive_size
 
-            with self.receive_lock:
+                # if len(chunk) != self.chunk_size:
+                #     print("chunk", chunk_number, "has size", len(chunk))
+
+                chunk_number += 1
+
+            #print("num chunks:", chunk_number, "last chunk size:", receive_size)
+            #print("left message length:", message_length)
+
+            data_writer.flush()
+            data = data_io.getvalue()
+            data_io.close()
+
+            #data_bytes = data.getvalue()
+            if len(data) == target_data_length:
                 print("message received")
-                self.received_data = data.getvalue()
+            else:
+                print("wrong received message length:", len(data))
+                #raise
+
+            with self.receive_lock:
+                self.received_data = data
                 self.new_data_available = True
 
     def get_received_data(self):
@@ -168,6 +193,9 @@ class SocketDataExchange:
                 self.sending_data_available = False
                 data = self.sending_data
             message_length = len(data).to_bytes(64, byteorder='big', signed=False)
+            if self.connection is None:
+                print("No connection")
+                return
             self.connection.send(message_length)
             print("sending message with size", len(data))
             self.connection.sendall(data)

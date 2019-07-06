@@ -66,13 +66,13 @@ class Jitter(torch.nn.Module):
 
 
 class JitterLoop(torch.nn.Module):
-    def __init__(self, output_length, dim, jitter_size=None, jitter_batches=1, first_batch_without_jitter=True):
+    def __init__(self, output_length, dim, jitter_size=None, jitter_batches=1, first_batch_offset=None):
         super().__init__()
         self.output_length = output_length
         self.dim = dim
         self.jitter_batches = jitter_batches
         self.jitter_size = jitter_size
-        self.first_batch_without_jitter = first_batch_without_jitter
+        self.first_batch_offset = first_batch_offset
 
     def forward(self, x):
         if x.shape[0] == 1 and self.jitter_batches > 1:
@@ -93,10 +93,13 @@ class JitterLoop(torch.nn.Module):
             jitter_size = self.jitter_size
 
         indices = torch.arange(self.output_length).unsqueeze(0).repeat(jitter_batches, 1)
-        offset = torch.randint(jitter_size, size=[jitter_batches]).unsqueeze(1)
+        if self.jitter_size <= 0:
+            offset = torch.zeros(jitter_batches, dtype=torch.long).unsqueeze(1)
+        else:
+            offset = torch.randint(jitter_size, size=[jitter_batches]).unsqueeze(1)
 
-        if self.first_batch_without_jitter:
-            offset[0] = 0
+        if self.first_batch_offset is not None:
+            offset[0] = self.first_batch_offset
 
         indices += offset
 
@@ -109,6 +112,47 @@ class JitterLoop(torch.nn.Module):
 
         indices = indices.to(rx.device)
         new_x = torch.gather(rx, self.dim, indices)
+        return new_x
+
+
+class Masking2D(torch.nn.Module):
+    def __init__(self, size, axis='width', value=0.):
+        super().__init__()
+        self.axis = axis
+        self.size = size
+        self.value = value
+
+    def forward(self, x):
+        if self.size < 1:
+            return x
+
+        dim = 3 if self.axis == 'width' else 2
+
+        new_x = x.clone()
+
+        try:
+            if self.value.shape[0] != x.shape[1]:
+                print("value has wrong shape, x has ", x.shape[1], "channels")
+            value = self.value.to(x.device)
+        except:
+            value = torch.zeros(x.shape[1], dtype=x.dtype, device=x.device) + self.value
+
+        for batch in range(x.shape[0]):
+            #masking_size = random.randint(0, self.size-1)
+            masking_size = self.size
+            if masking_size == 0:
+                continue
+            position_range = x.shape[dim] - masking_size
+            position = random.randint(0, position_range - 1)
+            if self.axis == 'width':
+                v = value.view(-1, 1, 1).repeat([1, x.shape[2], masking_size])
+                new_x[batch, :, :, position:position+masking_size] = v
+            elif self.axis == 'height':
+                v = value.view(-1, 1, 1).repeat([1, masking_size, x.shape[3]])
+                new_x[batch, :, position:position + masking_size, :] = v
+            else:
+                print("unknown axis:", self.axis)
+
         return new_x
 
 
@@ -222,10 +266,15 @@ def activation_downsampling(activation_dict, target_length):
     return activation_dict
 
 
-def convert_activation_dict_type(activation_dict, dtype=np.float32):
-    for key, value in activation_dict.items():
-        activation_dict[key] = value.detach().cpu().numpy().astype(dtype)
-    return activation_dict
+def convert_activation_dict_type(activation_dict, dtype=torch.float, select_batch=None):
+    converted_activations = {}
+    if select_batch is not None:
+        for key, value in activation_dict.items():
+            converted_activations[key] = value[select_batch].detach().cpu().contiguous().clone().type(dtype)
+    else:
+        for key, value in activation_dict.items():
+            converted_activations[key] = value.detach().cpu().contiguous().clone().type(dtype)
+    return converted_activations
 
 
 def interpolate_position(x, pos, dim=None):
@@ -234,12 +283,45 @@ def interpolate_position(x, pos, dim=None):
 
     length = x.shape[dim]
     if length == 1:
-        return torch.index_select(x, dim=dim, index=torch.LongTensor(0))
+        return x.squeeze(dim)
 
     pos = min(max(0., pos), 1.)
     idx = int(pos*length)
+    idx2 = idx + 1 if idx < length-1 else 0
     interp = pos*length - idx
 
-    a = torch.index_select(x, dim=dim, index=torch.LongTensor(idx))
-    b = torch.index_select(x, dim=dim, index=torch.LongTensor(idx + 1))
+    a = torch.index_select(x, dim=dim, index=torch.LongTensor([idx])).squeeze(dim)
+    b = torch.index_select(x, dim=dim, index=torch.LongTensor([idx2])).squeeze(dim)
     return (1 - interp) * a + interp * b
+
+
+def select_activation_slice(activations, channel=0., channel_region=1.,
+                            pitch=0., pitch_region=1.,
+                            time=0., time_region=1.):
+
+    # batch, channel, pitch, time  or
+    # batch, channel, time
+
+    num_channels = activations.shape[1]
+    channel_pos = int(channel * num_channels)
+    channel_region = int(channel_region * num_channels)
+    channel_start = max(0, channel_pos - channel_region)
+    channel_end = min(num_channels, channel_pos + channel_region + 1)
+
+    num_time = activations.shape[-1]
+    time_pos = int(time * num_time)
+    time_region = int(time_region * num_time)
+    time_start = max(0, time_pos - time_region)
+    time_end = min(num_time, time_pos + time_region + 1)
+
+    if len(activations.shape) == 3 or activations.shape[1] == 2:
+        slice = activations[:, channel_start:channel_end, time_start:time_end]
+    else:
+        num_pitch = activations.shape[2]
+        pitch_pos = int(pitch * num_pitch)
+        pitch_region = int(pitch_region * num_pitch)
+        pitch_start = max(0, pitch_pos - pitch_region)
+        pitch_end = min(num_pitch, pitch_pos + pitch_region + 1)
+        slice = activations[:, channel_start:channel_end, pitch_start:pitch_end, time_start:time_end]
+
+    return slice

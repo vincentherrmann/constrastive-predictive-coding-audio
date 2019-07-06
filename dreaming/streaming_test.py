@@ -45,6 +45,8 @@ time.sleep(0.5)
 client = SocketDataExchangeClient(port=2222)
 time.sleep(0.5)
 
+time.sleep(10)
+
 tic = time.time()
 server.set_new_data(pickled_dict)
 

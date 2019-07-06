@@ -18,6 +18,7 @@ pp = pprint.PrettyPrinter(indent=4)
 experiment = 'e26'
 name = 'snapshots_model_2019-05-17_run_0_85000'
 
+
 try:
     dev = 'cuda:' + str(torch.cuda.current_device())
 except:
@@ -25,7 +26,6 @@ except:
 #dev = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 print("using device", dev)
 settings = experiments[experiment]
-
 if name is not None:
     settings['snapshot_config']['name'] = name
 

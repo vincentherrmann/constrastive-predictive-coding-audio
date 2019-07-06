@@ -18,7 +18,7 @@ from ml_utilities.pytorch_utilities import *
 pp = pprint.PrettyPrinter(indent=4)
 
 experiment = 'e26'
-name = 'snapshots_model_2019-05-17_run_0_85000'
+name = 'snapshots_model_2019-05-20_run_0_100000'
 
 try:
     dev = 'cuda:' + str(torch.cuda.current_device())
@@ -55,6 +55,8 @@ trainer = setup_ce_trainer(loaded_model,
                                trainer_args=settings['training_config'],
                                dev=dev)
 
+model.load_state_dict(loaded_model.state_dict())
+model.eval()
 pp.pprint(model)
 
 try:
@@ -89,9 +91,6 @@ def condense_statistics_dict(avg_dict):
             sum = functools.reduce(lambda a, b: a+b, inner_value, 0)
             avg_dict[key][inner_key] = sum / l
     return avg_dict
-
-
-model.eval()
 
 noise_avg_dict = None
 for i in range(10):

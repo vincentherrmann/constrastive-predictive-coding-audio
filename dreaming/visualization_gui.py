@@ -7,10 +7,12 @@ import torch
 import numpy as np
 import pickle
 import imageio
+import tkinter as tk
 import pprint
 import subprocess
 from matplotlib import pyplot as plt
-from PIL import Image
+from PIL import Image, ImageTk
+import cv2
 
 from configs.experiment_configs import *
 from setup_functions import *
@@ -100,7 +102,7 @@ del activation_dict['prediction']
 # 'data_statistics_snapshots_model_2019-05-20_run_0_100000.pickle'
 with open('../data_statistics_snapshots_model_2019-05-20_run_0_100000.pickle', 'rb') as handle:
     noise_statistics = pickle.load(handle)
-activation_dict = normalize_activations(activation_dict, noise_statistics)
+activation_dict = normalize_activations(activation_dict, noise_statistics, element_wise=True)
 
 range_dict = {
     "scalogram": [10, 500],
@@ -117,41 +119,49 @@ range_dict = {
 for key, (start, length) in range_dict.items():
     activation_dict[key] = activation_dict[key][:, :, start:start+length]
 
-# for key, value in activation_dict.items():
-#     if len(value.shape) == 2:
-#         plt.plot(value[-1, :20].detach())
-#     else:
-#         plt.plot(value[0, -1, :20].detach())
-#     plt.show()
-
-video_name = 'activation_animation_' + name + '.mp4'
-video_writer = imageio.get_writer(video_name, fps=24)
-images = []
 positions = np.load('/Users/vincentherrmann/Documents/Projekte/Immersions/visualization/layouts/layout_e25_3.npy')
-for time_position in np.linspace(0., 1., 96, endpoint=False):
+
+root = tk.Tk()
+app = tk.Frame(root, bg='black')
+app.grid()
+lmain = tk.Label(app)
+lmain.grid()
+
+global loop_step
+loop_step = 0
+
+global tik
+tik = time.time()
+
+canvas = ds.Canvas(plot_width=400, plot_height=400,
+                   x_range=(-7, 7), y_range=(-7, 7),
+                   x_axis_type='linear', y_axis_type='linear')
+
+
+def animation_callback():
+    global loop_step
+    global tik
+    time_position = (time.time() % 4) / 4.
+
+    loop_step += 1
+    loop_step %= 96
     current_activations = activation_dict.copy()
     for key, value in activation_dict.items():
         current_activations[key] = interpolate_position(value, time_position)
     activations = flatten_activations(current_activations)
 
-    plot = activation_plot(positions, values=activations.detach().cpu().numpy())
-    image_data = np.frombuffer(plot.data.tobytes(), dtype=np.uint8).reshape(600, 600, 4)
-    img = Image.fromarray(image_data, mode='RGBA')
-    #img = img.rotate(360*time_position)
-    video_writer.append_data(np.asarray(img))
-    #images.append(img)
+    plot = activation_plot(positions, values=activations.detach().cpu().numpy(), canvas=canvas)
+    img = plot.to_pil()
+    imgtk = ImageTk.PhotoImage(image=img)
+    lmain.imgtk = imgtk
+    lmain.configure(image=imgtk)
+    lmain.after(1, animation_callback)
+    tok = time.time()
+    print("frame duration:", tok-tik)
+    tik = tok
 
-    #img.show()
 
-video_writer.close()
+root.after(0, animation_callback)
+root.mainloop()
 
-cmd = "ffmpeg -i " + video_name + " -i " + audio_clip + \
-      " -c:v copy -c:a aac -strict experimental muxed_" + video_name + " -y"
-subprocess.call(cmd, shell=True)
-# images[0].save('activation_animation.gif',
-#                save_all=True,
-#                append_images=images[1:],
-#                duration=50,
-#                loop=0)
-#pprint.pprint(loaded_model)
 
