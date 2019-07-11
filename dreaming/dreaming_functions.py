@@ -27,6 +27,20 @@ def jitter(x, jitter_size, dims=None, jitter_batches=1):
             xs = torch.index_select(xs, d, indices=o)
 
 
+class ActivationNormalization(torch.nn.Module):
+    def __init__(self, means, variances):
+        super().__init__()
+        self.means = torch.nn.ParameterDict({key: torch.nn.Parameter(value.unsqueeze(0), requires_grad=False)
+                                             for (key, value) in  means.items()})
+        self.variances = torch.nn.ParameterDict({key: torch.nn.Parameter(value.unsqueeze(0), requires_grad=False)
+                                                 for (key, value) in  variances.items()})
+
+    def forward(self, activations):
+        for key, value in self.means.items():
+            activations[key] = (activations[key] - value) / self.variances[key]
+        return activations
+
+
 class Jitter(torch.nn.Module):
     def __init__(self, jitter_sizes, dims, jitter_batches=1):
         super().__init__()
@@ -116,11 +130,12 @@ class JitterLoop(torch.nn.Module):
 
 
 class Masking2D(torch.nn.Module):
-    def __init__(self, size, axis='width', value=0.):
+    def __init__(self, size, axis='width', value=0., exclude_first_batch=False):
         super().__init__()
         self.axis = axis
         self.size = size
         self.value = value
+        self.exclude_first_batch = exclude_first_batch
 
     def forward(self, x):
         if self.size < 1:
@@ -137,7 +152,7 @@ class Masking2D(torch.nn.Module):
         except:
             value = torch.zeros(x.shape[1], dtype=x.dtype, device=x.device) + self.value
 
-        for batch in range(x.shape[0]):
+        for batch in range(1 if self.exclude_first_batch else 0, x.shape[0]):
             #masking_size = random.randint(0, self.size-1)
             masking_size = self.size
             if masking_size == 0:
@@ -235,6 +250,28 @@ def istft(stft_matrix, hop_length=None, win_length=None, window='hann',
     return y / coeff
 
 
+def window_function(x, min_clamp=-1., max_clamp=1.):
+    x = np.clip(x, min_clamp, max_clamp)
+    return (2 - 2*np.cos(np.pi*(x+1))) * 0.25
+
+
+def eq_bands(levels, freqs, sizes, fft_bands, sample_rate=16000):
+    base_f = 0.5 * sample_rate / fft_bands
+    scaling = 1.
+    x = np.linspace(0., 1., num=fft_bands, dtype=np.float32)
+    x_freq = np.linspace(base_f, sample_rate/2, num=fft_bands, dtype=np.float32)
+    x_log = np.geomspace(x_freq[0], x_freq[-1], endpoint=True, num=fft_bands, dtype=np.float32)
+
+    all_bands = 0.
+    for i in range(len(levels)):
+        band_x = (x - freqs[i] * scaling) / (sizes[i] * scaling)
+        all_bands += levels[i] * window_function(band_x,
+                                     min_clamp=0. if i == 0 else -1.,
+                                     max_clamp=0. if i == len(levels)-1 else 1.)
+    all_bands = np.interp(x_freq, x_log, all_bands).astype(np.float32)
+    return 10**(all_bands / 20), x_freq
+
+
 def spectral_local_response_normalization(x, size=3, n_fft=512):
     x_stft = torch.stft(x, n_fft)
     amplitude = torch.sqrt(x_stft[:, :, :, 0]**2 + x_stft[:, :, :, 1]**2)
@@ -303,25 +340,39 @@ def select_activation_slice(activations, channel=0., channel_region=1.,
     # batch, channel, time
 
     num_channels = activations.shape[1]
-    channel_pos = int(channel * num_channels)
-    channel_region = int(channel_region * num_channels)
-    channel_start = max(0, channel_pos - channel_region)
-    channel_end = min(num_channels, channel_pos + channel_region + 1)
+    channel_region = max(1, int(channel_region * num_channels))
+    channel_pos = int(channel * (num_channels - channel_region + 1))
+    channel_start = max(0, channel_pos - channel_region + 1)
+    channel_end = min(num_channels, channel_pos + channel_region)
 
     num_time = activations.shape[-1]
-    time_pos = int(time * num_time)
-    time_region = int(time_region * num_time)
-    time_start = max(0, time_pos - time_region)
-    time_end = min(num_time, time_pos + time_region + 1)
+    time_region = max(1, int(time_region * num_time))
+    time_pos = int(time * (num_time - time_region + 1))
+    time_start = max(0, time_pos - time_region + 1)
+    time_end = min(num_time, time_pos + time_region)
 
-    if len(activations.shape) == 3 or activations.shape[1] == 2:
+    if len(activations.shape) == 3:
         slice = activations[:, channel_start:channel_end, time_start:time_end]
     else:
         num_pitch = activations.shape[2]
-        pitch_pos = int(pitch * num_pitch)
-        pitch_region = int(pitch_region * num_pitch)
-        pitch_start = max(0, pitch_pos - pitch_region)
-        pitch_end = min(num_pitch, pitch_pos + pitch_region + 1)
+        pitch_region = max(1, int(pitch_region * num_pitch))
+        pitch_pos = int(pitch * (num_pitch - pitch_region + 1))
+        pitch_start = max(0, pitch_pos - pitch_region + 1)
+        pitch_end = min(num_pitch, pitch_pos + pitch_region)
         slice = activations[:, channel_start:channel_end, pitch_start:pitch_end, time_start:time_end]
 
     return slice
+
+
+def flatten_activations(activation_dict, exclude_first_dimension=False):
+    activations = []
+    if exclude_first_dimension:
+        for key, value in activation_dict.items():
+            activations.append(value.view(value.shape[0], -1))
+        activations = torch.cat(activations, dim=1)
+    else:
+        for key, value in activation_dict.items():
+            activations.append(value.view(-1))
+        activations = torch.cat(activations)
+    return activations
+

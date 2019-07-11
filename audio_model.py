@@ -220,8 +220,14 @@ class AudioPredictiveCodingModel(nn.Module):
 
 
 class ActivationRegister:
-    def __init__(self, writing_condition=None, clone_activations=False, batch_filter=None, move_to_cpu=False):
-        self.activations = OrderedDict()
+    def __init__(self, writing_condition=None, clone_activations=False, batch_filter=None, move_to_cpu=False, devices=None):
+        self.devices = devices
+        if devices is not None:
+            self.activations = {}
+            for dev in devices:
+                self.activations[dev] = OrderedDict()
+        else:
+            self.activations = OrderedDict()
         self.active = True
         self.writing_condition = writing_condition
         self.clone_activations = clone_activations
@@ -239,13 +245,31 @@ class ActivationRegister:
         if self.batch_filter is not None:
             value = value[self.batch_filter]
 
+        if self.devices is not None:
+            dev = value.device.index
+
         if self.move_to_cpu:
             value = value.cpu()
 
         if self.clone_activations:
             value = value.clone()
 
-        self.activations[name] = value
+        if self.devices is not None:
+            self.activations[dev][name] = value
+        else:
+            self.activations[name] = value
+
+    def get_activations(self):
+        if self.devices is None:
+            return self.activations
+        else:
+            act = {
+                key: torch.cuda.comm.gather([self.activations[dev][key] for dev in self.devices],
+                                            dim=0, destination=self.devices[0])
+                for key in self.activations[self.devices[0]].keys()
+            }
+            return act
+
 
 
 class ActivationWriter(nn.Module):

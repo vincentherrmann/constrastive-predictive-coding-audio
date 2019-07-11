@@ -32,6 +32,9 @@ if name is not None:
 
 register = ActivationRegister()
 
+with open('dreaming/calculation_activations_-1e4_noise', 'rb') as handle:
+    reference_statistics = pickle.load(handle)
+
 model, preprocessing_module, untraced_model = setup_model(cqt_params=settings['cqt_config'],
                                                           encoder_params=settings['encoder_config'],
                                                           ar_params=settings['ar_model_config'],
@@ -45,17 +48,10 @@ loaded_model, snapshot_manager, continue_training_at_step = setup_snapshot_manag
                                                                             try_proceeding=True,
                                                                             load_to_cpu=(dev == 'cpu'))
 
-trainer = setup_ce_trainer(loaded_model,
-                               snapshot_manager,
-                               item_length=untraced_model.item_length,
-                               downsampling_factor=untraced_model.encoder.downsampling_factor,
-                               ar_size=untraced_model.ar_size,
-                               preprocessing_module=preprocessing_module,
-                               dataset_args=settings['dataset_config'],
-                               trainer_args=settings['training_config'],
-                               dev=dev)
-
-model.load_state_dict(loaded_model.state_dict())
+try:
+    model.load_state_dict(loaded_model.state_dict())
+except:
+    model.load_state_dict(loaded_model.module.state_dict())
 model.eval()
 pp.pprint(model)
 
@@ -94,7 +90,7 @@ def condense_statistics_dict(avg_dict):
 
 noise_avg_dict = None
 for i in range(10):
-    audio_input = (torch.rand(64, 1, input_length, device=dev) * 2. - 1.) * 1e-2
+    audio_input = (torch.rand(64, 1, input_length, device=dev) * 2. - 1.) * 1e-4
     scal = preprocessing_module(audio_input)
     #plt.imshow(scal[0, 0], origin='lower', aspect='auto')
     #plt.colorbar()
@@ -106,6 +102,16 @@ pprint.pprint(noise_avg_dict)
 
 with open('noise_statistics_' + name + '.pickle', 'wb') as handle:
     pickle.dump(noise_avg_dict, handle)
+
+trainer = setup_ce_trainer(loaded_model,
+                               snapshot_manager,
+                               item_length=untraced_model.item_length,
+                               downsampling_factor=untraced_model.encoder.downsampling_factor,
+                               ar_size=untraced_model.ar_size,
+                               preprocessing_module=preprocessing_module,
+                               dataset_args=settings['dataset_config'],
+                               trainer_args=settings['training_config'],
+                               dev=dev)
 
 data_avg_dict = None
 v_dataloader = torch.utils.data.DataLoader(trainer.validation_set,
