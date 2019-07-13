@@ -15,7 +15,7 @@ import threading
 
 
 class AudioLoop:
-    def __init__(self, signal, crossfade=2000):
+    def __init__(self, signal, sample_rate, crossfade=2000):
         self.signal = signal
         self.signal_length = signal.shape[0]
         self.new_signal = signal
@@ -24,15 +24,21 @@ class AudioLoop:
         self.new_signal_available = False
         self.crossfade = np.linspace(0, 1, crossfade)
         self.crossfade_length = crossfade
+        self.sample_rate = sample_rate
+        self.earliest_switch_time = 0.
+        self.current_loop_start_time = 0.
 
     def callback(self, in_data, frame_count, time_info, status):
         #print(self.position)
-        self.position += frame_count
         with self.lock:
+            self.position += frame_count
             if self.position < self.signal_length - self.crossfade_length:
                 data = self.signal[self.position-frame_count:self.position].tobytes()
             else:
-                if not self.new_signal_available:
+                # start new loop
+                self.current_loop_start_time = time_info['output_buffer_dac_time'] + \
+                                               (self.signal_length - self.position) / self.sample_rate
+                if not self.new_signal_available or time.time() < self.earliest_switch_time:
                     data_1 = self.signal[self.position-frame_count:].tobytes()
                     self.position = self.position % self.signal_length
                     data_2 = self.signal[:self.position].tobytes()
@@ -70,13 +76,19 @@ class AudioLoop:
                     data = b''.join([data_before_crossfade, crossfade_data, data_after_crossfade])
         return data, pyaudio.paContinue
 
-    def set_new_signal(self, new_signal):
+    def set_new_signal(self, new_signal, earliest_switch_time=0):
         if new_signal.shape[0] != self.signal_length:
             print("error: new signal has different length")
             return
         with self.lock:
             self.new_signal_available = True
             self.new_signal = new_signal
+            self.earliest_switch_time = earliest_switch_time
+
+    def get_next_loop_start_time(self):
+        with self.lock:
+            t = self.current_loop_start_time + self.signal_length / self.sample_rate
+        return t
 
 
 #audio_loop = AudioLoop(signal)
