@@ -6,6 +6,7 @@ import pyaudio
 import threading
 import multiprocessing as mp
 import time
+import cv2
 from PIL import Image, ImageTk, ImageChops
 import matplotlib
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2TkAgg
@@ -233,6 +234,11 @@ class DreamingControlApp:
 
         current_column += 1
 
+        self.keep_targets_switch = MidiSwitch(self.dreaming_frame, 'keep targets')
+        self.keep_targets_switch.grid(row=0, column=current_column)
+
+        current_column += 1
+
         self.channel_slider = MidiSlider(self.dreaming_frame, 'channel',
                                          min=0., max=1., resolution=0.01, length=200.,
                                          command=self.target_change)
@@ -269,7 +275,7 @@ class DreamingControlApp:
         current_column += 1
 
         self.time_region_slider = MidiSlider(self.dreaming_frame, 'time region',
-                                         min=0., max=1., resolution=0.01, length=200.,
+                                         min=0., max=1., default=1., resolution=0.01, length=200.,
                                          command=self.target_change)
         self.time_region_slider.grid(row=0, column=current_column)
 
@@ -326,7 +332,17 @@ class DreamingControlApp:
                                        x_range=(self.x_min - self.x_edge, self.x_max + self.x_edge),
                                        y_range=(self.y_min - self.y_edge, self.y_max + self.y_edge),
                                        x_axis_type='linear', y_axis_type='linear')
-        self.draw_target_viz()
+
+        self.selected_regions = []
+
+        self.blank_activations = collections.OrderedDict()
+        for key, value in self.activation_statistics.items():
+            if key in ['c_code', 'z_code', 'prediction']:
+                continue
+            if len(value['element_mean'].shape) == 2:
+                self.blank_activations[key] = 0. * value['element_mean'][:, 0:1].repeat(1, self.num_frames)
+            else:
+                self.blank_activations[key] = 0. * value['element_mean'][:, :, 0:1].repeat(1, 1, self.num_frames)
 
         self.activation_dict = None
         self.communicator = SocketDataExchangeClient(port=int(self.port_entry.get()),
@@ -366,11 +382,16 @@ class DreamingControlApp:
         # visualization window
         self.main_viz = MainVisualization(self, 600, 600)
 
+        self.draw_target_viz()
+
         # MIDI
         midi_controls = list(self.dreaming_frame.children.values())
         mappable_controls = [c for c in midi_controls if c.name in midi_controller_mapping.keys()]
         mapping = {int(midi_controller_mapping[control.name]): control for control in mappable_controls}
-        self.midi_controller = MidiController('BCF2000', mapping)
+        try:
+            self.midi_controller = MidiController('BCF2000', mapping)
+        except OSError as e:
+            print(e)
 
         self.audio_stream.start_stream()
         self.set_new_data(data, 0)
@@ -378,19 +399,13 @@ class DreamingControlApp:
         self.root.mainloop()
 
     def send_control_dict(self, *args):
-        try:
-            activation = self.activation_names[self.activations_box.curselection()[0]]
-        except:
-            activation = None
+        # try:
+        #     activation = self.activation_names[self.activations_box.curselection()[0]]
+        # except:
+        #     activation = None
 
         control_dict = {
-            'activation': activation,
-            'channel': self.channel_slider.get_value(),
-            'channel_region': self.channel_region_slider.get_value(),
-            'pitch': self.pitch_slider.get_value(),
-            'pitch_region': self.pitch_region_slider.get_value(),
-            'time': self.time_slider.get_value(),
-            'time_region': self.time_region_slider.get_value(),
+            'selected_regions': self.selected_regions,
             'lr': self.lr_slider.get_value(),
             'time_jitter': self.time_jitter_slider.get_value(),
             'noise_loss': self.noise_loss_slider.get_value(),
@@ -422,12 +437,6 @@ class DreamingControlApp:
         except:
             pass
         self.audio_loop.set_new_signal(data['audio'], earliest_switch_time=self.current_time + time_buffer)
-        # start_time = self.audio_loop.get_next_loop_start_time(self.sample_rate)
-        # if start_time < tik + 0.2:
-        #     start_time += self.main_viz.loop_length
-        # print("next start time:", start_time)
-        # self.main_viz.start_time = start_time
-        # self.main_viz.process_data_dict['start_time'] = start_time
         self.main_viz.process_data_dict['activation_dict'] = self.activation_dict
         self.draw_scalogram(data['scalogram'].numpy(), data['scalogram_grad'].numpy(), data['losses'])
 
@@ -436,14 +445,15 @@ class DreamingControlApp:
         if self.communicator.new_data_available:
             data = pickle.loads(self.communicator.get_received_data())
             self.set_new_data(data)
-        if self.current_time > self.next_loop_start_time:
+        loop_position = self.next_loop_start_time - self.current_time
+        if loop_position < 0. or loop_position > self.main_viz.loop_length:
             self.next_loop_start_time = self.audio_loop.get_next_loop_start_time()
             print("next start time:", self.next_loop_start_time)
             self.main_viz.process_data_dict['start_time'] = self.next_loop_start_time
-        self.main_viz.process_data_dict['focused_activations'] = self.focused_activations
-        self.main_viz.process_data_dict['max_agg'] = self.max_agg_slider.get_value()
-        self.main_viz.process_data_dict['target_size'] = min(self.main_viz.viz_window.winfo_width(),
-                                                             self.main_viz.viz_window.winfo_height())
+        # self.main_viz.process_data_dict['focused_activations'] = self.focused_activations
+        # self.main_viz.process_data_dict['max_agg'] = self.max_agg_slider.get_value()
+        # self.main_viz.process_data_dict['target_size'] = min(self.main_viz.viz_window.winfo_width(),
+        #                                                      self.main_viz.viz_window.winfo_height())
         self.main_viz.draw(self.current_time)
 
     def target_change(self, *args):
@@ -451,35 +461,41 @@ class DreamingControlApp:
         self.draw_target_viz()
 
     def draw_target_viz(self):
-        indices = self.activations_box.listbox.curselection()
-        target_activations = collections.OrderedDict()
-        for key, value in self.activation_statistics.items():
-            if key in ['c_code', 'z_code', 'prediction']:
-                continue
-            if len(value['element_mean'].shape) == 2:
-                target_activations[key] = 0. * value['element_mean'][:, 0:1].repeat(1, self.num_frames)
-            else:
-                target_activations[key] = 0. * value['element_mean'][:, :, 0:1].repeat(1, 1, self.num_frames)
-        for idx in indices:
-            key = self.activation_names[idx]
-            try:
-                value = target_activations[key]
-                value = value.unsqueeze(0)
-                slice = select_activation_slice(value,
-                                                channel=self.channel_var.get(), channel_region=self.channel_region_var.get(),
-                                                pitch=self.pitch_var.get(), pitch_region=self.pitch_region_var.get(),
-                                                time=self.time_var.get(), time_region=self.time_region_var.get())
-                slice += 1.
-            except:
-                pass
+        for value in self.blank_activations.values():
+            value *= 0.
 
+        this_region = {
+            'layer': self.activation_names[self.activations_box.get_value()],
+            'channel': self.channel_slider.get_value(),
+            'channel region': self.channel_region_slider.get_value(),
+            'pitch': self.pitch_slider.get_value(),
+            'pitch region': self.pitch_region_slider.get_value(),
+            'time': self.time_slider.get_value(),
+            'time region': self.time_region_slider.get_value()
+        }
+
+        if self.keep_targets_switch.get_value() > 0:
+            self.selected_regions.append(this_region)
+        else:
+            self.selected_regions = [this_region]
+
+        for region in self.selected_regions:
+            layer = self.blank_activations[region['layer']]
+            layer = layer.unsqueeze(0)
+            slice = select_activation_slice(layer,
+                                            channel=region['channel'], channel_region=region['channel region'],
+                                            pitch=region['pitch'], pitch_region=region['pitch region'],
+                                            time=region['time'], time_region=region['time region'])
+            slice += 1.
+
+        target_activations = self.blank_activations.copy()
         for key, value in target_activations.items():
             last_dim = len(value.shape) - 1
             perm = [last_dim] + list(range(last_dim))
             target_activations[key] = value.permute(*perm).contiguous()
 
         self.focused_activations = flatten_activations(target_activations, exclude_first_dimension=True)
-        activations = self.focused_activations.max(0)[0]
+        activations = torch.clamp(self.focused_activations.max(0)[0], 0., 1.)
 
         selected_positions = self.layout[0][activations > 0., :]
         if selected_positions.shape[0] > 0:
@@ -583,19 +599,7 @@ class MainVisualization:
         self.viz_window_label.imgtk = imgtk
         self.viz_window_label.configure(image=imgtk)
 
-        # Background Process
-        # self.viz_conn, conn = mp.Pipe(duplex=True)
-        # self.visualization_process = mp.Process(target=self.viz_worker, args=(conn,))
-        # self.visualization_process.daemon = True
-        # self.visualize = True
-        # self.viz_conn.send({'activation_dict': None})
-        # self.visualization_process.start()
-        # self.main_viz_tik = time.time()
-        # audio_loop = self.app.audio_loop
-        # start_time = time.time() + (audio_loop.signal_length - audio_loop.position) / self.app.sample_rate
-        # loop_length = audio_loop.signal_length / self.app.sample_rate
-
-        self.num_processes = 8
+        self.num_processes = 6
         self.process_manager = mp.Manager()
         input_dict = {
             'visualize': True,
@@ -609,14 +613,22 @@ class MainVisualization:
             'transform_target': np.array([0., 0., 1., 1., 0., 0., 0.])
         }
         self.process_data_dict = self.process_manager.dict(input_dict)
-        self.image_list = self.process_manager.list([None] * self.num_frames)
+        #self.image_list = self.process_manager.list([None] * self.num_frames)
+        self.image_queue = mp.Queue()
+        self.frame_list = []
         self.processes = []
         for i in range(self.num_processes):
-            p = mp.Process(target=self.viz_process_worker, args=(i,
+            p = mp.Process(name='main_viz_worker' + str(i),
+                           target=self.viz_process_worker, args=(i,
                                                                  self.process_data_dict,
-                                                                 self.image_list))
+                                                                 self.image_queue))
             p.start()
             self.processes.append(p)
+
+        self.frame_list_lock = threading.Lock()
+        self.queue_loading_thread = Thread(name='queue loading', target=self.load_frame_list)
+        self.queue_loading_thread.daemon = True
+        self.queue_loading_thread.start()
 
     def new_target(self, position, size):
         position_x = (position[0] - self.app.x_min) / (self.app.x_max - self.app.x_min) * self.width
@@ -632,7 +644,7 @@ class MainVisualization:
         shift_x = target_size * 0.5
         shift_y = target_size * 0.5
 
-        start_state = self.process_data_dict['transform_target']
+        start_state = self.transform_current_state
 
         theta = math.atan2((position_x - self.width * 0.5), (position_y - self.height * 0.5))
         current_theta = (start_state[6] + np.pi) % (2 * np.pi) - np.pi
@@ -646,17 +658,12 @@ class MainVisualization:
             start_state[6] = current_theta
             start_state[6] = current_theta
 
-        #self.process_data_dict['transform_start_state'] = start_state
-        start_time = self.app.current_time + 0.5
-        self.process_data_dict['transform_start_state'] = self.transform_state(start_time,
-                                                                               self.process_data_dict['transform_start_time'],
-                                                                               self.process_data_dict['transform_start_state'],
-                                                                               self.process_data_dict['transform_target'])
-        self.process_data_dict['transform_target'] = np.array([center_x, center_y, scale_x, scale_y, shift_x, shift_y, theta])
-        self.process_data_dict['transform_start_time'] = self.app.current_time + 0.5
+        self.transform_start_time = time.time()
+        self.transform_start_state = start_state
+        self.transform_target = np.array([center_x, center_y, scale_x, scale_y, shift_x, shift_y, theta])
 
     @staticmethod
-    def calc_affine_parameters(p):
+    def calc_affine_parameters_pil(p):
         # input: numpy array with
         #   0         1         2        3        4        5        6
         # center_x, center_y, scale_x, scale_y, shift_x, shift_y, theta
@@ -672,37 +679,114 @@ class MainVisualization:
 
         return [a, b, c, d, e, f]
 
+    @staticmethod
+    def calc_affine_parameters_cv2(p):
+        # input: numpy array with
+        #   0         1         2        3        4        5        6
+        # center_x, center_y, scale_x, scale_y, shift_x, shift_y, theta
+        cos_th = -math.cos(p[6])
+        sin_th = -math.sin(p[6])
+
+        a = cos_th * p[2]
+        b = sin_th * p[2]
+        c = p[4] - p[0] * a - p[1] * b
+        d = -sin_th * p[3]
+        e = cos_th * p[3]
+        f = p[5] - p[0] * d - p[1] * e
+
+        return np.float32([[a, b, c], [d, e, f]])
+
+    def load_frame_list(self):
+        while True:
+            frame_time, img = self.image_queue.get()
+            with self.frame_list_lock:
+                self.frame_list.append((frame_time, img))
+                self.frame_list.sort(key=lambda t: t[0])
+
     def draw(self, current_time):
+        current_time += 0.2
+        #print("current time", current_time)
+
+        tik = time.time()
+
+        # while len(self.frame_list) < 20 and not self.image_queue.empty():
+        #     frame_time, img = self.image_queue.get()
+        #     self.frame_list.append((frame_time, img))
+        #     self.frame_list.sort(key=lambda t: t[0])
+
+        with self.frame_list_lock:
+            if len(self.frame_list) == 0:
+                self.viz_window_label.after(50, self.app.main_viz_callback)
+                return
+
+            frame_time, img = self.frame_list[0]
+            #print("frame list length:", len(self.frame_list))
+
+            while frame_time < current_time:
+                if len(self.frame_list) == 0:
+                    self.viz_window_label.after(50, self.app.main_viz_callback)
+                    return
+                else:
+                    frame_time, img = self.frame_list.pop(0)
+
+        loading_duration = time.time() - tik
+        # if loading_duration > 0.02:
+        #     print("loading image duration:", loading_duration)
+
+
+
+        tik = time.time()
+        img = img.reshape(self.width, self.height, 4)
+        target_size = min(self.viz_window.winfo_width(), self.viz_window.winfo_height())
+
+        transition_position = self.interpolation_function((time.time() - self.transform_start_time) / self.transition_time)
+        self.transform_current_state = self.transform_start_state * (1 - transition_position) + \
+                                       self.transform_target * transition_position
+        affine_parameters = self.calc_affine_parameters_cv2(self.transform_current_state)
+
+        img = cv2.warpAffine(img, affine_parameters,
+                             (target_size, target_size))
+        img = Image.fromarray(img)
+
+        transform_duration = time.time() - tik
+        # if transform_duration > 0.01:
+        #     print("transform duration", transform_duration)
+
         #tik = time.time() - self.app.audio_loop.get_next_loop_start_time(sample_rate=self.app.sample_rate)
-        tik = current_time - self.app.next_loop_start_time
-        frame_position = int(self.num_frames * (tik % self.loop_length) / self.loop_length)
-        img = self.image_list[frame_position]
-        if img is None:
-            self.viz_window_label.after(50, self.app.main_viz_callback)
-            return
+        # tik = current_time - self.app.next_loop_start_time
+        # frame_position = int(self.num_frames * (tik % self.loop_length) / self.loop_length)
+        # tik = time.time()
+        # img = self.image_list[frame_position]
+        # print("time to get image:", time.time() - tik)
+        # if img is None:
+        #     self.viz_window_label.after(50, self.app.main_viz_callback)
+        #     return
         #target_size = min(self.viz_window.winfo_width(), self.viz_window.winfo_height())
 
-        # transition_position = self.interpolation_function((time.time() - self.transform_start_time) / self.transition_time)
-        # self.transform_current_state = self.transform_start_state * (1 - transition_position) + \
-        #                                self.transform_target * transition_position
-        # affine_parameters = self.calc_affine_parameters(self.transform_current_state)
         #
         # img = img.transform((target_size, target_size), Image.AFFINE, affine_parameters, resample=Image.BILINEAR)
 
+
+
         #img = img.resize((target_size, target_size), resample=Image.BICUBIC)
+        tik = time.time()
+        #print("frame time:", frame_time)
         imgtk = ImageTk.PhotoImage(image=img)
         self.viz_window_label.imgtk = imgtk
-        self.viz_window_label.configure(image=imgtk)
-        self.viz_window_label.after(50, self.app.main_viz_callback)
+        imgtk_duration = time.time() - tik
 
-    def viz_process_worker(self, number, input_dict, output_images):
-        # input_dict = {
-        #     'visualize': True,
-        #     'start_time': time.time(),
-        #     'activation_dict': None,
-        #     'focused_activations': None,
-        #     'max_agg': 1.
-        # }
+        tik = time.time()
+        self.viz_window_label.configure(image=imgtk)
+        update_duration = time.time() - tik
+        if loading_duration + transform_duration + update_duration > 0.1:
+            print("")
+            print("loading", loading_duration)
+            print("transform", transform_duration)
+            print("imgtk", imgtk_duration)
+            print("update", update_duration)
+        self.viz_window_label.after(40, self.app.main_viz_callback)
+
+    def viz_process_worker(self, number, input_dict, image_queue):
         activation_dict = input_dict['activation_dict']
         transform_target = input_dict['transform_target']
         transform_start_state = input_dict['transform_target']
@@ -714,14 +798,15 @@ class MainVisualization:
             frame_number = i * self.num_processes + number
             loop_position = frame_number / self.num_frames
             precalc_frame = int(loop_position * self.num_precalc_frames)
-            current_absolute_time = last_start_time + self.loop_length * loop_position
+            current_absolute_time = last_start_time + self.loop_length * loop_position  #TODO: time is wrong!!!
             if loop_position >= 1.:
                 if self.only_calculate_new_frames:
-                    while input_dict['start_time'] <= last_start_time:
+                    while True:
+                        calc_duration = time.time() - tik
+                        if calc_duration > self.loop_length:
+                            break
                         time.sleep(0.01)
-                        continue
                 i = 0
-                calc_duration = time.time() - tik
                 print("calc duration:", calc_duration)
                 if calc_duration > 4.:
                     print("viz calculation too slow!")
@@ -780,7 +865,6 @@ class MainVisualization:
             yiq_plot = np.matmul(rgb_plot, self.rgb_yiq_transform)
 
             # color_transform
-            # hue_shift = time_position * np.pi * 2.
             hue_shift = 0.
             u = math.cos(hue_shift)
             w = math.sin(hue_shift)
@@ -794,33 +878,21 @@ class MainVisualization:
 
             rgb_plot = (np.clip(rgb_plot, 0., 1.) * 255.).astype(np.uint8)
             rgb_plot = np.concatenate([rgb_plot, np.full((rgb_plot.shape[0], 1), 255, dtype=np.uint8)], axis=1)
-            rgb_plot = rgb_plot.view('uint32').reshape(plot.data.shape[0], plot.data.shape[1])
-            plot.data = rgb_plot
-
-            img = plot.to_pil()
-
-            # transform_target = input_dict['transform_target']
-            # transition_position = (current_absolute_time - input_dict['transform_start_time']) / self.transition_time
-            # transition_position = self.interpolation_function(transition_position)
-            # transform_state = transform_start_state * (1 - transition_position) + \
-            #                   transform_target * transition_position
+            #rgb_plot = rgb_plot.view('uint32').reshape(plot.data.shape[0], plot.data.shape[1])
+            #plot.data = rgb_plot
+            #img = plot
+            #img = plot.to_pil()
             transform_state = self.transform_state(current_absolute_time, input_dict['transform_start_time'],
                                                    input_dict['transform_start_state'], input_dict['transform_target'])
-            # if transition_position <= 0.:
-            #     transform_start_state = transform_state
-            affine_parameters = self.calc_affine_parameters(transform_state)
+
+            affine_parameters = self.calc_affine_parameters_pil(transform_state)
 
             target_size = input_dict['target_size']
-            img = img.transform((target_size, target_size), Image.AFFINE, affine_parameters, resample=Image.BILINEAR)
-
-            # img = img.resize((target_size, target_size), resample=Image.BICUBIC)
-            # imgtk = ImageTk.PhotoImage(image=img)
-            # self.viz_window_label.imgtk = imgtk
-            # self.viz_window_label.configure(image=imgtk)
-            # self.viz_window_label.after(50, self.app.streaming_callback)
+            # img = img.transform((target_size, target_size), Image.AFFINE, affine_parameters, resample=Image.BILINEAR)
 
             #print("write frame", frame_number)
-            output_images[frame_number] = img
+            image_queue.put((current_absolute_time, rgb_plot))
+            #output_images[frame_number] = img
             i += 1
 
     def transform_state(self, time, start_time, start_state, target_state):
@@ -828,92 +900,6 @@ class MainVisualization:
         transition_position = self.interpolation_function(transition_position)
         transform_state = start_state * (1 - transition_position) + target_state * transition_position
         return transform_state
-
-    def viz_worker(self, conn):
-        tik = time.time()
-        while self.visualize:
-            if conn.poll(0):
-                print("new activations")
-                received_data = conn.recv()
-                activation_dict = received_data['activation_dict']
-            if activation_dict is None:
-                conn.send(None)
-                time.sleep(0.1)
-                continue
-            loop_length = received_data['loop_length']
-            time_position = ((tik - received_data['start_time']) % loop_length) / loop_length
-            time_frame = int(time_position * self.num_frames)
-            current_activations = activation_dict.copy()
-            for key, (start, length) in range_dict.items():
-                current_activations[key] = current_activations[key][:, :, start:start + length]
-            for key, value in current_activations.items():
-                current_activations[key] = interpolate_position(value, time_position)
-            timestep_layout = self.app.layout[time_frame]
-
-            edges_colormap = ['#000000', '#2f4858', '#33658a', '#86bbd8', '#9dd9d2', '#79bcb8']
-            edges_img = tf.shade(self.connections[time_frame], cmap=edges_colormap)
-            edges_img = tf.set_background(edges_img, 'black')
-            rgb_edges = edges_img.data.view(dtype='uint8').reshape(-1, 4)[:, :3].astype(np.float32) / 255.
-
-            hues_img = self.hues[time_frame]
-
-            current_focused_activations = received_data['focused_activations'][time_frame]
-            focused_positions = timestep_layout[current_focused_activations > 0.]
-            focus_plot = activation_plot(focused_positions, canvas=self.viz_window_canvas, spread=4, alpha=255,
-                                         min_agg=0., max_agg=1., colormap=[(0, 0, 0), (0, 255, 255)])
-            focus_plot = tf.set_background(focus_plot, 'black')
-
-            flat_activations = flatten_activations(current_activations) ** 2
-            flat_activations[flat_activations != flat_activations] = 0 # set nans to 0
-
-            max_activation = flat_activations.mean().item() * 0.0
-
-            plot = activation_plot(timestep_layout, values=flat_activations.detach().cpu().numpy(),
-                                   canvas=self.viz_window_canvas, spread=1, alpha=100, min_agg=0,
-                                   max_agg=received_data['max_agg'],
-                                   colormap=[(0, 0, 0), (255, 255, 255)])
-
-            # TEST!!!
-            #plot = focus_plot
-
-
-
-            #edges_img = ds.transfer_functions.Image(edges_img.data, coords=plot.coords)
-            plot = tf.set_background(plot, 'black')
-
-            rgb_focus = focus_plot.data.view(dtype='uint8').reshape(-1, 4)[:, :3].astype(np.float32) / 255.
-            rgb_plot = plot.data.view(dtype='uint8').reshape(-1, 4)[:, :3].astype(np.float32) / 255.
-            rgb_hue = hues_img.data.view(dtype='uint8').reshape(-1, 4)[:, :3].astype(np.float32) / 255.
-            rgb_plot *= rgb_hue
-            rgb_plot = 1 - (1 - rgb_edges*max_activation) * (1 - rgb_plot) + 0.2 * rgb_focus
-
-            yiq_plot = np.matmul(rgb_plot, self.rgb_yiq_transform)
-
-            # color_transform
-            # hue_shift = time_position * np.pi * 2.
-            hue_shift = 0.
-            u = math.cos(hue_shift)
-            w = math.sin(hue_shift)
-            s = 1.0  # saturation
-            v = 1.  # value
-            color_transform = np.array([[v, 0, 0], [0, v*s*u, -v*s*w], [0, v*s*w, v*s*u]], dtype=np.float32)
-            yiq_plot = np.matmul(yiq_plot, color_transform)
-
-            rgb_plot = np.matmul(yiq_plot, self.yiq_rgb_transform)
-
-            rgb_plot = (np.clip(rgb_plot, 0., 1.) * 255.).astype(np.uint8)
-            rgb_plot = np.concatenate([rgb_plot, np.full((rgb_plot.shape[0], 1), 255, dtype=np.uint8)], axis=1)
-            rgb_plot = rgb_plot.view('uint32').reshape(plot.data.shape[0], plot.data.shape[1])
-            plot.data = rgb_plot
-
-            img = plot.to_pil()
-            #img = ImageChops.multiply(img, hues_img.to_pil())
-            conn.send(img)
-            # self.viz_window_label.imgtk = imgtk
-            # self.viz_window_label.configure(image=imgtk)
-            tok = time.time()
-            #print("main viz interval:", tok - tik)
-            tik = tok
 
     @staticmethod
     def interpolation_function(value):

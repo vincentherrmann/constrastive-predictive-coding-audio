@@ -21,7 +21,7 @@ class LoopStreamServer:
 
     def start_server(self):
         self.stream = True
-        self.streaming_thread = threading.Thread(target=self.serve)
+        self.streaming_thread = threading.Thread(name='loop stream', target=self.serve)
         self.streaming_thread.daemon = True
         self.streaming_thread.start()
 
@@ -78,7 +78,7 @@ class LoopStreamClient:
 
     def start_client(self):
         self.stream = True
-        self.streaming_thread = threading.Thread(target=self.receive)
+        self.streaming_thread = threading.Thread(name='loop stream', target=self.receive)
         self.streaming_thread.daemon = True
         self.streaming_thread.start()
 
@@ -205,7 +205,7 @@ class SocketDataExchange:
             self.sending_data_available = True
             self.sending_data = data
         if not self.sending_thread.isAlive():
-            self.sending_thread = threading.Thread(target=self.send)
+            self.sending_thread = threading.Thread(name='stream receive', target=self.send)
             self.sending_thread.daemon = True
             self.sending_thread.start()
 
@@ -214,7 +214,7 @@ class SocketDataExchange:
             print("can't start streaming without connection")
             return
         self.stream = True
-        self.receiving_thread = threading.Thread(target=self.receive)
+        self.receiving_thread = threading.Thread(name='stream send', target=self.receive)
         self.receiving_thread.daemon = True
         self.receiving_thread.start()
         print("streaming is active")
@@ -240,7 +240,7 @@ class SocketDataExchangeServer(SocketDataExchange):
         self.socket = socket.socket()
         self.stream_automatically = stream_automatically
 
-        connect_thread = threading.Thread(target=self.connect_to_client)
+        connect_thread = threading.Thread(name='connect ot client', target=self.connect_to_client)
         connect_thread.daemon = True
         connect_thread.start()
 

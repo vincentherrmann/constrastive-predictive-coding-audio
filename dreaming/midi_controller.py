@@ -22,7 +22,9 @@ midi_controller_mapping = {
     'activation loss': 5,
     'eq lows': 6,
     'eq mids': 7,
-    'eq highs': 8
+    'eq highs': 8,
+    # switches
+    'keep targets': 75
 }
 
 
@@ -34,11 +36,11 @@ class MidiController:
         self.lock = Lock()
         self.message_log = {}
 
-        self.receive_thread = Thread(target=self.receive_messages)
+        self.receive_thread = Thread(name='midi receive', target=self.receive_messages)
         self.receive_thread.daemon = True
         self.receive_thread.start()
 
-        self.set_values_thread = Thread(target=self.set_values)
+        self.set_values_thread = Thread(name='midi set', target=self.set_values)
         self.set_values_thread.daemon = True
         self.set_values_thread.start()
 
@@ -142,6 +144,37 @@ class MidiListbox(tk.Frame):
             return self.listbox.curselection()[0]
         except:
             return 0
+
+
+class MidiSwitch(tk.Frame):
+    def __init__(self, parent, label, default=0, command=None):
+        super().__init__(parent)
+
+        self.name = label
+        self.var = tk.IntVar(value=default)
+        self.checkbutton = tk.Checkbutton(self, variable=self.var, text=label, command=self.value_changed)
+        self.checkbutton.grid(row=0, column=0)
+
+        self.command = command
+        self._midi_controller = None
+        self._controller_number = 0
+
+    def value_changed(self, *args):
+        if self._midi_controller is not None:
+            midi_value = 127 * self.get_value()
+            self._midi_controller.send_control_message(self._controller_number, midi_value)
+        if self.command is not None:
+            self.command()
+
+    def set_value(self, midi_value):
+        value = midi_value // 127
+        self.var.set(value)
+        if self.command is not None:
+            self.command()
+
+    def get_value(self):
+        return self.var.get()
+
 
 
 if __name__ == '__main__':
