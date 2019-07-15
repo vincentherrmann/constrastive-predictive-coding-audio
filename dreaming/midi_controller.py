@@ -24,7 +24,9 @@ midi_controller_mapping = {
     'eq mids': 7,
     'eq highs': 8,
     # switches
-    'keep targets': 75
+    'keep targets': 75,
+    # buttons
+    'select': 67
 }
 
 
@@ -152,7 +154,7 @@ class MidiSwitch(tk.Frame):
 
         self.name = label
         self.var = tk.IntVar(value=default)
-        self.checkbutton = tk.Checkbutton(self, variable=self.var, text=label, command=self.value_changed)
+        self.checkbutton = tk.Button(self, text=label, command=self.value_changed)
         self.checkbutton.grid(row=0, column=0)
 
         self.command = command
@@ -175,6 +177,30 @@ class MidiSwitch(tk.Frame):
     def get_value(self):
         return self.var.get()
 
+
+class MidiButton(tk.Frame):
+    def __init__(self, parent, label, command=None):
+        super().__init__(parent)
+
+        self.name = label
+        self.button = tk.Checkbutton(self, text=label, command=self.value_changed)
+        self.button.grid(row=0, column=0)
+
+        self.command = command
+        self._midi_controller = None
+        self._controller_number = 0
+
+    def value_changed(self, *args):
+        if self._midi_controller is not None:
+            self._midi_controller.send_control_message(self._controller_number, 0)
+        if self.command is not None:
+            self.command()
+
+    def set_value(self, midi_value):
+        if self._midi_controller is not None:
+            self._midi_controller.send_control_message(self._controller_number, 0)
+        if self.command is not None:
+            self.command()
 
 
 if __name__ == '__main__':

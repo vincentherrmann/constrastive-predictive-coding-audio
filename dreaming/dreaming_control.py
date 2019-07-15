@@ -239,37 +239,37 @@ class DreamingControlApp:
 
         current_column += 1
 
+        self.select_target_button = MidiButton(self.dreaming_frame, 'select', command=self.target_change)
+        self.select_target_button.grid(row=0, column=current_column)
+
+        current_column += 1
+
         self.channel_slider = MidiSlider(self.dreaming_frame, 'channel',
-                                         min=0., max=1., resolution=0.01, length=200.,
-                                         command=self.target_change)
+                                         min=0., max=1., resolution=0.01, length=200.)
         self.channel_slider.grid(row=0, column=current_column)
 
         current_column += 1
 
         self.channel_region_slider = MidiSlider(self.dreaming_frame, 'channel region',
-                                         min=0., max=1., resolution=0.01, length=200.,
-                                         command=self.target_change)
+                                         min=0., max=1., resolution=0.01, length=200.)
         self.channel_region_slider.grid(row=0, column=current_column)
 
         current_column += 1
 
         self.pitch_slider = MidiSlider(self.dreaming_frame, 'pitch',
-                                         min=0., max=1., resolution=0.01, length=200.,
-                                         command=self.target_change)
+                                         min=0., max=1., resolution=0.01, length=200.)
         self.pitch_slider.grid(row=0, column=current_column)
 
         current_column += 1
 
         self.pitch_region_slider = MidiSlider(self.dreaming_frame, 'pitch region',
-                                         min=0., max=1., resolution=0.01, length=200.,
-                                         command=self.target_change)
+                                         min=0., max=1., resolution=0.01, length=200.)
         self.pitch_region_slider.grid(row=0, column=current_column)
 
         current_column += 1
 
         self.time_slider = MidiSlider(self.dreaming_frame, 'time',
-                                         min=0., max=1., resolution=0.01, length=200.,
-                                         command=self.target_change)
+                                         min=0., max=1., resolution=0.01, length=200.)
         self.time_slider.grid(row=0, column=current_column)
 
         current_column += 1
@@ -332,7 +332,7 @@ class DreamingControlApp:
                                        x_range=(self.x_min - self.x_edge, self.x_max + self.x_edge),
                                        y_range=(self.y_min - self.y_edge, self.y_max + self.y_edge),
                                        x_axis_type='linear', y_axis_type='linear')
-
+        self.region_img = None
         self.selected_regions = []
 
         self.blank_activations = collections.OrderedDict()
@@ -382,7 +382,11 @@ class DreamingControlApp:
         # visualization window
         self.main_viz = MainVisualization(self, 600, 600)
 
-        self.draw_target_viz()
+        self.draw_target_lock = threading.Lock()
+        self.new_target_img = False
+        self.draw_target_thread = Thread(name='draw target', target=self.draw_target_viz)
+        self.draw_target_thread.daemon = True
+        self.draw_target_thread.start()
 
         # MIDI
         midi_controls = list(self.dreaming_frame.children.values())
@@ -450,17 +454,21 @@ class DreamingControlApp:
             self.next_loop_start_time = self.audio_loop.get_next_loop_start_time()
             print("next start time:", self.next_loop_start_time)
             self.main_viz.process_data_dict['start_time'] = self.next_loop_start_time
-        # self.main_viz.process_data_dict['focused_activations'] = self.focused_activations
-        # self.main_viz.process_data_dict['max_agg'] = self.max_agg_slider.get_value()
-        # self.main_viz.process_data_dict['target_size'] = min(self.main_viz.viz_window.winfo_width(),
+        self.main_viz.process_data_dict['max_agg'] = self.max_agg_slider.get_value()
+        #self.main_viz.process_data_dict['target_size'] = min(self.main_viz.viz_window.winfo_width(),
         #                                                      self.main_viz.viz_window.winfo_height())
         self.main_viz.draw(self.current_time)
 
+        with self.draw_target_lock:
+            if self.region_img is not None:
+                self.region_label.imgtk = self.region_img
+                self.region_label.configure(image=self.region_img)
+                self.region_img = None
+                self.new_target_img = False
+
     def target_change(self, *args):
         self.send_control_dict()
-        self.draw_target_viz()
 
-    def draw_target_viz(self):
         for value in self.blank_activations.values():
             value *= 0.
 
@@ -474,43 +482,57 @@ class DreamingControlApp:
             'time region': self.time_region_slider.get_value()
         }
 
-        if self.keep_targets_switch.get_value() > 0:
-            self.selected_regions.append(this_region)
-        else:
-            self.selected_regions = [this_region]
+        with self.draw_target_lock:
+            self.new_target_img = True
+            if self.keep_targets_switch.get_value() > 0:
+                self.selected_regions.append(this_region)
+            else:
+                self.selected_regions = [this_region]
 
-        for region in self.selected_regions:
-            layer = self.blank_activations[region['layer']]
-            layer = layer.unsqueeze(0)
-            slice = select_activation_slice(layer,
-                                            channel=region['channel'], channel_region=region['channel region'],
-                                            pitch=region['pitch'], pitch_region=region['pitch region'],
-                                            time=region['time'], time_region=region['time region'])
-            slice += 1.
+    def draw_target_viz(self):
+        while True:
+            if not self.new_target_img:
+                time.sleep(0.1)
+                continue
 
-        target_activations = self.blank_activations.copy()
-        for key, value in target_activations.items():
-            last_dim = len(value.shape) - 1
-            perm = [last_dim] + list(range(last_dim))
-            target_activations[key] = value.permute(*perm).contiguous()
+            for region in self.selected_regions:
+                if region['layer'] == 'prediction':
+                    continue
+                layer = self.blank_activations[region['layer']]
+                layer = layer.unsqueeze(0)
+                slice = select_activation_slice(layer,
+                                                channel=region['channel'], channel_region=region['channel region'],
+                                                pitch=region['pitch'], pitch_region=region['pitch region'],
+                                                time=region['time'], time_region=region['time region'])
+                slice += 1.
 
-        self.focused_activations = flatten_activations(target_activations, exclude_first_dimension=True)
-        activations = torch.clamp(self.focused_activations.max(0)[0], 0., 1.)
+            target_activations = self.blank_activations.copy()
+            for key, value in target_activations.items():
+                last_dim = len(value.shape) - 1
+                perm = [last_dim] + list(range(last_dim))
+                target_activations[key] = value.permute(*perm).contiguous()
 
-        selected_positions = self.layout[0][activations > 0., :]
-        if selected_positions.shape[0] > 0:
-            target_position = torch.mean(selected_positions, dim=0)
-            target_size = (torch.max(selected_positions[:, 0]) - torch.min(selected_positions[:, 0])) * \
-                          (torch.max(selected_positions[:, 1]) - torch.min(selected_positions[:, 1]))
-            self.main_viz.new_target((target_position[0].item(), target_position[1].item()), target_size.item())
+            focused_activations = flatten_activations(target_activations, exclude_first_dimension=True)
+            self.main_viz.process_data_dict['focused_activations'] = focused_activations
 
-        plot = activation_plot(self.layout[0], values=activations.detach().cpu().numpy(), canvas=self.region_canvas,
-                               spread=0, min_agg=0., max_agg=1., alpha=255)
-        plot = tf.set_background(plot, 'black')
-        img = plot.to_pil()
-        imgtk = ImageTk.PhotoImage(image=img)
-        self.region_label.imgtk = imgtk
-        self.region_label.configure(image=imgtk)
+            activations = torch.clamp(focused_activations.max(0)[0], 0., 1.)
+
+            selected_positions = self.layout[0][activations > 0., :]
+            if selected_positions.shape[0] > 0:
+                target_position = torch.mean(selected_positions, dim=0)
+                target_size = (torch.max(selected_positions[:, 0]) - torch.min(selected_positions[:, 0])) * \
+                              (torch.max(selected_positions[:, 1]) - torch.min(selected_positions[:, 1]))
+                self.main_viz.new_target((target_position[0].item(), target_position[1].item()), target_size.item())
+
+            plot = activation_plot(self.layout[0], values=activations.detach().cpu().numpy(), canvas=self.region_canvas,
+                                   spread=0, min_agg=0., max_agg=1., alpha=255)
+            plot = tf.set_background(plot, 'black')
+            img = plot.to_pil()
+            imgtk = ImageTk.PhotoImage(image=img)
+            with self.draw_target_lock:
+                self.region_img = imgtk
+                self.new_target_img = True
+            time.sleep(0.1)
 
     def draw_scalogram(self, scalogram, scalogram_grad, losses=None):
         self.scal_plot.set_data(scalogram)
@@ -524,13 +546,13 @@ class DreamingControlApp:
         if losses is not None:
             losses = np.array(losses)
             self.loss_plot.set_ydata(losses)
-            self.loss_ax.set_ylim([losses.min(), losses.max()])
+            self.loss_ax.set_ylim([losses.min() - 0.1, losses.max() + 0.1])
             self.loss_plot_canvas.draw()
 
     def update_equalizer(self, *args):
-        band_factors, freqs = eq_bands(levels = [self.eq_lows_slider.get_value(),
-                                                 self.eq_mids_slider.get_value(),
-                                                 self.eq_highs_slider.get_value()],
+        band_factors, freqs = eq_bands(levels=[self.eq_lows_slider.get_value(),
+                                               self.eq_mids_slider.get_value(),
+                                               self.eq_highs_slider.get_value()],
                                        freqs=[0.1, 0.5, 1.], sizes=[0.2, 0.5, 0.5],
                                        fft_bands=self.num_eq_bands, sample_rate=self.sample_rate)
 
@@ -580,6 +602,7 @@ class MainVisualization:
         self.viz_window.geometry(str(self.width) + 'x' + str(self.height))
 
         self.viz_window_size = (self.width, self.height)
+        self.target_size = min(self.width, self.height)
 
         self.viz_window_frame = tk.Frame(self.viz_window)
         self.viz_window_frame.pack()
@@ -635,7 +658,7 @@ class MainVisualization:
         position_y = (self.app.y_max - position[1]) / (self.app.y_max - self.app.y_min) * self.height
         scale_factor = 0.1 / (size + 0.15) + 0.9
 
-        target_size = min(self.viz_window.winfo_width(), self.viz_window.winfo_height())
+        target_size = self.target_size
 
         center_x = 0.5 * (self.width * 0.5) + 0.5 * position_x
         center_y = 0.5 * (self.height * 0.5) + 0.5 * position_y
@@ -667,8 +690,8 @@ class MainVisualization:
         # input: numpy array with
         #   0         1         2        3        4        5        6
         # center_x, center_y, scale_x, scale_y, shift_x, shift_y, theta
-        cos_th = math.cos(-p[6])
-        sin_th = math.sin(-p[6])
+        cos_th = math.cos(p[6])
+        sin_th = math.sin(p[6])
 
         a = cos_th / p[2]
         b = sin_th / p[2]
@@ -684,8 +707,8 @@ class MainVisualization:
         # input: numpy array with
         #   0         1         2        3        4        5        6
         # center_x, center_y, scale_x, scale_y, shift_x, shift_y, theta
-        cos_th = -math.cos(p[6])
-        sin_th = -math.sin(p[6])
+        cos_th = math.cos(p[6])
+        sin_th = math.sin(p[6])
 
         a = cos_th * p[2]
         b = sin_th * p[2]
@@ -704,19 +727,16 @@ class MainVisualization:
                 self.frame_list.sort(key=lambda t: t[0])
 
     def draw(self, current_time):
-        current_time += 0.2
+        current_time -= 0.5
+        self.target_size = min(self.viz_window.winfo_width(), self.viz_window.winfo_height())
         #print("current time", current_time)
 
         tik = time.time()
 
-        # while len(self.frame_list) < 20 and not self.image_queue.empty():
-        #     frame_time, img = self.image_queue.get()
-        #     self.frame_list.append((frame_time, img))
-        #     self.frame_list.sort(key=lambda t: t[0])
-
         with self.frame_list_lock:
             if len(self.frame_list) == 0:
                 self.viz_window_label.after(50, self.app.main_viz_callback)
+                print("skip frame")
                 return
 
             frame_time, img = self.frame_list[0]
@@ -725,6 +745,7 @@ class MainVisualization:
             while frame_time < current_time:
                 if len(self.frame_list) == 0:
                     self.viz_window_label.after(50, self.app.main_viz_callback)
+                    print("skip frame")
                     return
                 else:
                     frame_time, img = self.frame_list.pop(0)
@@ -733,10 +754,10 @@ class MainVisualization:
         # if loading_duration > 0.02:
         #     print("loading image duration:", loading_duration)
 
-
-
         tik = time.time()
         img = img.reshape(self.width, self.height, 4)
+        img = img[::-1, ::1, :]
+
         target_size = min(self.viz_window.winfo_width(), self.viz_window.winfo_height())
 
         transition_position = self.interpolation_function((time.time() - self.transform_start_time) / self.transition_time)
@@ -752,23 +773,6 @@ class MainVisualization:
         # if transform_duration > 0.01:
         #     print("transform duration", transform_duration)
 
-        #tik = time.time() - self.app.audio_loop.get_next_loop_start_time(sample_rate=self.app.sample_rate)
-        # tik = current_time - self.app.next_loop_start_time
-        # frame_position = int(self.num_frames * (tik % self.loop_length) / self.loop_length)
-        # tik = time.time()
-        # img = self.image_list[frame_position]
-        # print("time to get image:", time.time() - tik)
-        # if img is None:
-        #     self.viz_window_label.after(50, self.app.main_viz_callback)
-        #     return
-        #target_size = min(self.viz_window.winfo_width(), self.viz_window.winfo_height())
-
-        #
-        # img = img.transform((target_size, target_size), Image.AFFINE, affine_parameters, resample=Image.BILINEAR)
-
-
-
-        #img = img.resize((target_size, target_size), resample=Image.BICUBIC)
         tik = time.time()
         #print("frame time:", frame_time)
         imgtk = ImageTk.PhotoImage(image=img)
@@ -800,16 +804,19 @@ class MainVisualization:
             precalc_frame = int(loop_position * self.num_precalc_frames)
             current_absolute_time = last_start_time + self.loop_length * loop_position  #TODO: time is wrong!!!
             if loop_position >= 1.:
-                if self.only_calculate_new_frames:
-                    while True:
-                        calc_duration = time.time() - tik
-                        if calc_duration > self.loop_length:
-                            break
-                        time.sleep(0.01)
-                i = 0
+                calc_duration = time.time() - tik
                 print("calc duration:", calc_duration)
                 if calc_duration > 4.:
                     print("viz calculation too slow!")
+                if self.only_calculate_new_frames:
+
+                    while True:
+                        if calc_duration > self.loop_length:
+                            break
+                        calc_duration = time.time() - tik
+                        time.sleep(0.01)
+                i = 0
+
                 tik = time.time()
                 last_start_time = input_dict['start_time']
                 try:
@@ -860,7 +867,7 @@ class MainVisualization:
             rgb_plot = plot.data.view(dtype='uint8').reshape(-1, 4)[:, :3].astype(np.float32) / 255.
             rgb_hue = hues_img.data.view(dtype='uint8').reshape(-1, 4)[:, :3].astype(np.float32) / 255.
             rgb_plot *= rgb_hue
-            rgb_plot = 1 - (1 - rgb_edges * max_activation) * (1 - rgb_plot) + 0.2 * rgb_focus
+            rgb_plot = (1 - (1 - rgb_edges * max_activation) * (1 - rgb_plot)) * (1. + 2. * rgb_focus)
 
             yiq_plot = np.matmul(rgb_plot, self.rgb_yiq_transform)
 
