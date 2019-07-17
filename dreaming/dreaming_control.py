@@ -6,7 +6,10 @@ import pyaudio
 import threading
 import multiprocessing as mp
 import time
+import math
 import cv2
+import glob
+import os.path
 from PIL import Image, ImageTk, ImageChops
 import matplotlib
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2TkAgg
@@ -42,13 +45,16 @@ activations = [
 defaults_dict = {
     'port': 2222,
     'host': '127.0.0.1',
+    #'audio_device': 'Soundflower (2ch)',
+    #'audio_device': 'Saffire',
+    'audio_device': 'Built-in Output',
     'lr': -3.,
     'time_jitter': 0.1,
     'noise_loss': 0.1,
     'activation_loss': 0.,
     'time_masking': 0,
     'pitch_masking': 0,
-    'batch_size': 32,
+    'batch_size': 8,
     'activation_names': activations,
     'activation_statistics': '../data_statistics_snapshots_model_2019-05-20_run_0_100000.pickle',
     'layout': '/Users/vincentherrmann/Documents/Projekte/Immersions/visualization/layouts/e25_version_3/e25_positions_interp_100.npy',
@@ -57,14 +63,8 @@ defaults_dict = {
 }
 
 control_dict = {
-    'activation': 'scalogram',
-    'channel': 0.,
-    'channel_region': 1.,
-    'pitch': 0.,
-    'pitcpch': 0.,
-    'pitch_region': 1.,
-    'time': 0.,
-    'time_region': 1.,
+    'selected_regions': [],
+    'activation_loss': 0,
     'lr': defaults_dict['lr'],
     'time_jitter': defaults_dict['time_jitter'],
     'noise_loss': defaults_dict['noise_loss'],
@@ -88,10 +88,10 @@ range_dict = {
 }
 
 audio_clips = OrderedDict(
-    [('simple_drum_loop', 'base_loop_2_16khz.wav'),
-     ('silence', ('')),
-     ('noise', (''))]
+    [(os.path.basename(path), path) for path in sorted(glob.glob('loops_16khz/*.wav'))]
 )
+
+audio_clip_names = list(audio_clips.keys())
 
 
 class DreamingControlApp:
@@ -187,16 +187,21 @@ class DreamingControlApp:
 
         current_column += 1
 
-        self.batch_size_slider = MidiSlider(self.dreaming_frame, 'batch_size', default=32,
+        self.batch_size_slider = MidiSlider(self.dreaming_frame, 'batch_size', default=8,
                                              min=0., max=64., resolution=1., length=200.,
                                              command=self.send_control_dict)
         self.batch_size_slider.grid(row=0, column=current_column)
 
         current_column += 1
 
-        self.soundclip_box = MidiListbox(self.dreaming_frame, 'original soundclips', elements=audio_clips.keys(),
-                                           default_index=0, width=20, height=12)
-        self.soundclip_box.grid(row=0, column=current_column)
+        self.sound_selection_frame = tk.Frame(self.dreaming_frame)
+        self.soundclip_box = MidiListbox(self.sound_selection_frame, 'original soundclips', elements=audio_clips.keys(),
+                                         default_index=11, width=20, height=11)
+        self.soundclip_box.grid(row=0, column=0)
+
+        self.soundclip_button = MidiButton(self.sound_selection_frame, 'select clip', command=self.send_control_dict)
+        self.soundclip_button.grid(row=1, column=0)
+        self.sound_selection_frame.grid(row=0, column=current_column)
 
         current_column += 1
 
@@ -228,19 +233,18 @@ class DreamingControlApp:
 
         current_column += 1
 
-        self.activations_box = MidiListbox(self.dreaming_frame, 'activation selection', elements=self.activation_names,
-                                           default_index=3, width=20, height=12)
-        self.activations_box.grid(row=0, column=current_column)
+        self.activation_selection_frame = tk.Frame(self.dreaming_frame)
+        self.activations_box = MidiListbox(self.activation_selection_frame, 'activation selection', elements=self.activation_names,
+                                           default_index=3, width=20, height=10)
+        self.activations_box.grid(row=0, column=0)
 
-        current_column += 1
+        self.keep_targets_switch = MidiSwitch(self.activation_selection_frame, 'keep targets')
+        self.keep_targets_switch.grid(row=1, column=0)
 
-        self.keep_targets_switch = MidiSwitch(self.dreaming_frame, 'keep targets')
-        self.keep_targets_switch.grid(row=0, column=current_column)
+        self.select_target_button = MidiButton(self.activation_selection_frame, 'select target', command=self.target_change)
+        self.select_target_button.grid(row=2, column=0)
 
-        current_column += 1
-
-        self.select_target_button = MidiButton(self.dreaming_frame, 'select', command=self.target_change)
-        self.select_target_button.grid(row=0, column=current_column)
+        self.activation_selection_frame.grid(row=0, column=current_column)
 
         current_column += 1
 
@@ -350,20 +354,31 @@ class DreamingControlApp:
                                                      stream_automatically=True)
 
         self.pyaudio = pyaudio.PyAudio()
+        audio_device_index = None
+        for i in range(self.pyaudio.get_device_count()):
+            if self.pyaudio.get_device_info_by_index(i)['name'] == defaults['audio_device']:
+                audio_device_index = i
+                print("use audio device", self.pyaudio.get_device_info_by_index(i)['name'])
+                break
+        if audio_device_index is None:
+            audio_device_index = self.pyaudio.get_default_input_device_info()['index']
+            print("did not find audio device", defaults['audio_device'], "using default device",
+                  self.pyaudio.get_device_info_by_index(i)['name'], "instead")
         self.audio_loop = AudioLoop(np.zeros(64000, dtype=np.int16), sample_rate=self.sample_rate)
         self.audio_stream = self.pyaudio.open(format=self.pyaudio.get_format_from_width(2, unsigned=False),
                                               channels=1,
                                               rate=self.sample_rate,
                                               output=True,
                                               stream_callback=self.audio_loop.callback,
-                                              frames_per_buffer=4096)
+                                              frames_per_buffer=4096,
+                                              output_device_index=audio_device_index)
 
         # load dummy data
         with open('dummy_calculated_data.pickle', 'rb') as handle:
             data = pickle.load(handle)
         data['losses'] = np.zeros(100)
-        data['audio'] *= 0
-        data['audio'][32000:32100] += 30000
+        #data['audio'] *= 0
+        #data['audio'][32000:32100] += 30000
         self.activation_dict = data['activations']
         try:
             del self.activation_dict['c_code']
@@ -389,7 +404,8 @@ class DreamingControlApp:
         self.draw_target_thread.start()
 
         # MIDI
-        midi_controls = list(self.dreaming_frame.children.values())
+        all_children = self.all_tk_children(self.dreaming_frame)
+        midi_controls = [w for w in all_children if hasattr(w, 'name')]
         mappable_controls = [c for c in midi_controls if c.name in midi_controller_mapping.keys()]
         mapping = {int(midi_controller_mapping[control.name]): control for control in mappable_controls}
         try:
@@ -410,6 +426,7 @@ class DreamingControlApp:
 
         control_dict = {
             'selected_regions': self.selected_regions,
+            'selected_clip': audio_clip_names[self.soundclip_box.get_value()],
             'lr': self.lr_slider.get_value(),
             'time_jitter': self.time_jitter_slider.get_value(),
             'noise_loss': self.noise_loss_slider.get_value(),
@@ -433,6 +450,7 @@ class DreamingControlApp:
             self.start_audio_button.config(text=' stop audio ')
 
     def set_new_data(self, data, time_buffer=0.2):
+        tik = time.time()
         self.activation_dict = data['activations']
         try:
             del self.activation_dict['c_code']
@@ -440,31 +458,50 @@ class DreamingControlApp:
             del self.activation_dict['prediction']
         except:
             pass
+        print("process activation dict time:", time.time() - tik)
+        tik = time.time()
         self.audio_loop.set_new_signal(data['audio'], earliest_switch_time=self.current_time + time_buffer)
+        print("set audio signal time:", time.time() - tik)
+        tik = time.time()
         self.main_viz.process_data_dict['activation_dict'] = self.activation_dict
-        self.draw_scalogram(data['scalogram'].numpy(), data['scalogram_grad'].numpy(), data['losses'])
+        print("set activation dict time:", time.time() - tik)
+        # tik = time.time()
+        # self.draw_scalogram(data['scalogram'].numpy(), data['scalogram_grad'].numpy(), data['losses'])
+        # print("draw scalograms time:", time.time() - tik)
 
     def main_viz_callback(self):
+        tik = time.time()
         self.current_time = self.audio_stream.get_time()
         if self.communicator.new_data_available:
             data = pickle.loads(self.communicator.get_received_data())
+            #print("load data time:", time.time() - tik)
+            tik = time.time()
             self.set_new_data(data)
+            #print("set data time:", time.time() - tik)
+
+        tik = time.time()
         loop_position = self.next_loop_start_time - self.current_time
         if loop_position < 0. or loop_position > self.main_viz.loop_length:
             self.next_loop_start_time = self.audio_loop.get_next_loop_start_time()
-            print("next start time:", self.next_loop_start_time)
+            #print("next start time:", self.next_loop_start_time)
             self.main_viz.process_data_dict['start_time'] = self.next_loop_start_time
         self.main_viz.process_data_dict['max_agg'] = self.max_agg_slider.get_value()
+        self.main_viz.process_data_dict['time_jitter'] = self.time_jitter_slider.get_value()
+        #print("set process data dict time:", time.time() - tik)
+        tik = time.time()
         #self.main_viz.process_data_dict['target_size'] = min(self.main_viz.viz_window.winfo_width(),
         #                                                      self.main_viz.viz_window.winfo_height())
         self.main_viz.draw(self.current_time)
+        #print("main viz draw time:", time.time() - tik)
+        tik = time.time()
 
-        with self.draw_target_lock:
-            if self.region_img is not None:
-                self.region_label.imgtk = self.region_img
-                self.region_label.configure(image=self.region_img)
-                self.region_img = None
-                self.new_target_img = False
+        # with self.draw_target_lock:
+            # if self.region_img is not None:
+            #     self.region_label.imgtk = self.region_img
+            #     self.region_label.configure(image=self.region_img)
+            #     self.region_img = None
+            #     self.new_target_img = False
+        #print("set new target time:", time.time() - tik)
 
     def target_change(self, *args):
         self.send_control_dict()
@@ -524,14 +561,14 @@ class DreamingControlApp:
                               (torch.max(selected_positions[:, 1]) - torch.min(selected_positions[:, 1]))
                 self.main_viz.new_target((target_position[0].item(), target_position[1].item()), target_size.item())
 
-            plot = activation_plot(self.layout[0], values=activations.detach().cpu().numpy(), canvas=self.region_canvas,
-                                   spread=0, min_agg=0., max_agg=1., alpha=255)
-            plot = tf.set_background(plot, 'black')
-            img = plot.to_pil()
-            imgtk = ImageTk.PhotoImage(image=img)
-            with self.draw_target_lock:
-                self.region_img = imgtk
-                self.new_target_img = True
+            # plot = activation_plot(self.layout[0], values=activations.detach().cpu().numpy(), canvas=self.region_canvas,
+            #                        spread=0, min_agg=0., max_agg=1., alpha=255)
+            # plot = tf.set_background(plot, 'black')
+            # img = plot.to_pil()
+            # imgtk = ImageTk.PhotoImage(image=img)
+            # with self.draw_target_lock:
+            #     self.region_img = imgtk
+            #     self.new_target_img = True
             time.sleep(0.1)
 
     def draw_scalogram(self, scalogram, scalogram_grad, losses=None):
@@ -563,6 +600,16 @@ class DreamingControlApp:
         self.band_factors = band_factors
         self.send_control_dict()
 
+    @staticmethod
+    def all_tk_children(wid):
+        _list = wid.winfo_children()
+
+        for item in _list:
+            if item.winfo_children():
+                _list.extend(item.winfo_children())
+
+        return _list
+
 
 class MainVisualization:
     def __init__(self, app, width=600, height=600):
@@ -592,7 +639,7 @@ class MainVisualization:
         with open(app.defaults['hues'], 'rb') as handle:
             self.hues = pickle.load(handle)
         self.num_precalc_frames = len(self.connections)
-        self.num_frames = 60
+        self.num_frames = 8
         self.only_calculate_new_frames = True
 
         # UI
@@ -622,7 +669,7 @@ class MainVisualization:
         self.viz_window_label.imgtk = imgtk
         self.viz_window_label.configure(image=imgtk)
 
-        self.num_processes = 6
+        self.num_processes = 4
         self.process_manager = mp.Manager()
         input_dict = {
             'visualize': True,
@@ -630,6 +677,7 @@ class MainVisualization:
             'activation_dict': self.app.activation_dict,
             'focused_activations': None,
             'max_agg': 1.,
+            'time_jitter': self.app.time_jitter_slider.get_value(),
             'target_size': min(self.width, self.height),
             'transform_start_time': 0.,
             'transform_start_state': np.array([0., 0., 1., 1., 0., 0., 0.]),
@@ -725,6 +773,8 @@ class MainVisualization:
             with self.frame_list_lock:
                 self.frame_list.append((frame_time, img))
                 self.frame_list.sort(key=lambda t: t[0])
+            #if len(self.frame_list) > 100:
+            #print("length of frame list:", len(self.frame_list))
 
     def draw(self, current_time):
         current_time -= 0.5
@@ -749,6 +799,9 @@ class MainVisualization:
                     return
                 else:
                     frame_time, img = self.frame_list.pop(0)
+
+        while self.app.audio_stream.get_time() < frame_time:
+            time.sleep(0.02)
 
         loading_duration = time.time() - tik
         # if loading_duration > 0.02:
@@ -792,8 +845,9 @@ class MainVisualization:
 
     def viz_process_worker(self, number, input_dict, image_queue):
         activation_dict = input_dict['activation_dict']
-        transform_target = input_dict['transform_target']
-        transform_start_state = input_dict['transform_target']
+        # transform_target = input_dict['transform_target']
+        # transform_start_state = input_dict['transform_target']
+        hue_shift = 0.
         #target_size = input_dict['target_size']
         last_start_time = 0
         i = 1000
@@ -814,7 +868,7 @@ class MainVisualization:
                         if calc_duration > self.loop_length:
                             break
                         calc_duration = time.time() - tik
-                        time.sleep(0.01)
+                        time.sleep(0.05)
                 i = 0
 
                 tik = time.time()
@@ -828,6 +882,7 @@ class MainVisualization:
                     activation_dict[key] = activation_dict[key][:, :, start:start + length]
                 # transform_start_state = transform_target
                 # transform_target = input_dict['transform_target']
+                hue_shift = math.log2(input_dict['time_jitter'] + 1.) / 3.
                 continue
             current_activations = {}
             for key, value in activation_dict.items():
@@ -872,7 +927,7 @@ class MainVisualization:
             yiq_plot = np.matmul(rgb_plot, self.rgb_yiq_transform)
 
             # color_transform
-            hue_shift = 0.
+            # hue_shift = 0.
             u = math.cos(hue_shift)
             w = math.sin(hue_shift)
             s = 1.0  # saturation
@@ -898,6 +953,8 @@ class MainVisualization:
             # img = img.transform((target_size, target_size), Image.AFFINE, affine_parameters, resample=Image.BILINEAR)
 
             #print("write frame", frame_number)
+            print("frame number:", frame_number)
+            print("absolute time:", current_absolute_time)
             image_queue.put((current_absolute_time, rgb_plot))
             #output_images[frame_number] = img
             i += 1

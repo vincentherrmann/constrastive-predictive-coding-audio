@@ -36,7 +36,7 @@ class AudioLoop:
                 data = self.signal[self.position-frame_count:self.position].tobytes()
             else:
                 # start new loop
-                self.current_loop_start_time = time_info['output_buffer_dac_time'] + \
+                self.current_loop_start_time = time_info['current_time'] + \
                                                (self.signal_length - self.position) / self.sample_rate
                 if not self.new_signal_available or time.time() < self.earliest_switch_time:
                     data_1 = self.signal[self.position-frame_count:].tobytes()

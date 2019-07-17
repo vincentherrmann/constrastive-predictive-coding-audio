@@ -26,7 +26,8 @@ midi_controller_mapping = {
     # switches
     'keep targets': 75,
     # buttons
-    'select': 67
+    'select clip': 66,
+    'select target': 67
 }
 
 
@@ -154,7 +155,7 @@ class MidiSwitch(tk.Frame):
 
         self.name = label
         self.var = tk.IntVar(value=default)
-        self.checkbutton = tk.Button(self, text=label, command=self.value_changed)
+        self.checkbutton = tk.Checkbutton(self, text=label, command=self.value_changed)
         self.checkbutton.grid(row=0, column=0)
 
         self.command = command
@@ -183,7 +184,7 @@ class MidiButton(tk.Frame):
         super().__init__(parent)
 
         self.name = label
-        self.button = tk.Checkbutton(self, text=label, command=self.value_changed)
+        self.button = tk.Button(self, text=label, command=self.value_changed)
         self.button.grid(row=0, column=0)
 
         self.command = command

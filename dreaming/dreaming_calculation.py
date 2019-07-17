@@ -2,6 +2,8 @@ import torch
 import pprint
 import time
 import pickle
+import os.path
+import glob
 from matplotlib import pyplot as plt
 
 from configs.experiment_configs import *
@@ -59,21 +61,27 @@ class DreamingCalculation:
                                                                                                self.name)
         self.model.eval()
 
-        audio_input, sr = torchaudio.load('base_loop_2_16khz.wav')
-        audio_input = audio_input.unsqueeze(0) * 0.5
-        audio_input = audio_input.to(self.dev)
-        audio_input += (torch.rand(1, 1, audio_input.shape[2], device=self.dev) * 2. - 1.) * 1e-4
+        # audio_input, sr = torchaudio.load('base_loop_2_16khz.wav')
+        # audio_input = audio_input.unsqueeze(0) * 0.5
+        # audio_input = audio_input.to(self.dev)
+        # audio_input += (torch.rand(1, 1, audio_input.shape[2], device=self.dev) * 2. - 1.) * 1e-4
 
+        self.soundclip_dict = OrderedDict(
+            [(os.path.basename(path), torchaudio.load(path)[0].unsqueeze(0).to(self.dev))
+             for path in sorted(glob.glob('loops_16khz/*.wav'))]
+        )
+
+        audio_input = self.soundclip_dict['silence.wav'].clone()
         self.original_input = audio_input.clone()
 
         #audio_input += torch.rand(1, 1, audio_input.shape[2], device=self.dev) * 1e-4
         audio_input.requires_grad = True
         self.audio_input = audio_input
-        self.sr = sr
+        self.sr = 16000
 
         self.optimizer = torch.optim.SGD([self.audio_input], lr=1e-3)
         #self.scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer=self.optimizer, lr_lambda=lambda s: 1.05 ** s)
-        self.jitter_loop_module = JitterLoop(output_length=self.input_length, dim=2, jitter_batches=32, jitter_size=64000,
+        self.jitter_loop_module = JitterLoop(output_length=self.input_length, dim=2, jitter_batches=8, jitter_size=64000,
                                              first_batch_offset=0)
         self.input_extender = JitterLoop(output_length=self.input_length, dim=2, jitter_size=0)
         self.time_masking = Masking2D(size=0, axis='width', value=torch.FloatTensor([-20., 0.]), exclude_first_batch=True)
@@ -139,6 +147,7 @@ class DreamingCalculation:
             self.eq_bands = self.control_dict['eq_bands']
             if self.eq_bands is not None:
                 self.eq_bands = torch.from_numpy(self.eq_bands).to(self.dev)
+            self.original_input = self.soundclip_dict[self.control_dict['selected_clip']]
         if self.control_dict is None:
             time.sleep(0.01)
             return
@@ -152,6 +161,7 @@ class DreamingCalculation:
         self.jitter_loop_module.jitter_size = int(self.sr * self.control_dict['time_jitter'])
         self.jitter_loop_module.jitter_batches = batch_size
 
+        self.audio_input.data += torch.rand_like(self.audio_input.data) * 1e-4
         normalized_audio_input = self.audio_input
 
         jittered_input = self.jitter_loop_module(normalized_audio_input)
@@ -167,7 +177,7 @@ class DreamingCalculation:
 
         predicted_z, targets, z, c = self.model(masked_scal)
 
-        selected_activation = self.control_dict['activation']
+        selected_regions = self.control_dict['selected_regions']
         normalized_activations = self.activation_normalization(self.register.get_activations())
 
         del normalized_activations['c_code']
@@ -176,33 +186,65 @@ class DreamingCalculation:
 
         viz_activations = convert_activation_dict_type(normalized_activations, select_batch=0)
 
-        if selected_activation is None:
-            return
-        elif selected_activation == "prediction":
-            prediction_steps = predicted_z.shape[1]
-            scores = score_function(predicted_z, targets)
-            noise_scoring = torch.logsumexp(scores.view(-1, batch_size, prediction_steps),
-                                            dim=0)  # target_batch, target_step
-            valid_scores = torch.diagonal(scores, dim1=0, dim2=2)  # data_step, target_step, batch
-            valid_scores = torch.diagonal(valid_scores, dim1=0, dim2=1)  # batch, step
+        selected_activations = normalized_activations.copy()
+        for key, value in selected_activations.items():
+            selected_activations[key] = value * 0.
 
-            prediction_losses = -torch.mean(valid_scores - noise_scoring, dim=1)
-            loss = torch.mean(prediction_losses)
-        else:
-            activations = normalized_activations[selected_activation].to(self.dev)
-            target = select_activation_slice(activations,
-                                             channel=self.control_dict['channel'],
-                                             channel_region=self.control_dict['channel_region'],
-                                             pitch=self.control_dict['pitch'],
-                                             pitch_region=self.control_dict['pitch_region'],
-                                             time=self.control_dict['time'],
-                                             time_region=self.control_dict['time_region'])
-            print("target mean:", torch.mean(torch.abs(target)).item(),
-                  "rest mean:", torch.mean(torch.abs(activations)).item())
-            loss = torch.mean(torch.mean(target, dim=0)**2)
-            target *= 0.
+        loss = 0.
 
+        for region in selected_regions:
+            if region['layer'] == 'prediction':
+                prediction_steps = predicted_z.shape[1]
+                scores = score_function(predicted_z, targets)
+                noise_scoring = torch.logsumexp(scores.view(-1, batch_size, prediction_steps),
+                                                dim=0)  # target_batch, target_step
+                valid_scores = torch.diagonal(scores, dim1=0, dim2=2)  # data_step, target_step, batch
+                valid_scores = torch.diagonal(valid_scores, dim1=0, dim2=1)  # batch, step
+
+                prediction_losses = -torch.mean(valid_scores - noise_scoring, dim=1)
+                loss += torch.mean(prediction_losses)
+                continue
+            layer = selected_activations[region['layer']]
+            layer = layer.unsqueeze(0)
+            slice = select_activation_slice(layer,
+                                            channel=region['channel'], channel_region=region['channel region'],
+                                            pitch=region['pitch'], pitch_region=region['pitch region'],
+                                            time=region['time'], time_region=region['time region'])
+            slice += 1.
+
+        flat_selection = flatten_activations(selected_activations)
         flat_activations = flatten_activations(normalized_activations)
+        selected_activations = flat_activations[flat_selection > 0.]
+        if selected_activations.shape[0] != 0:
+            loss += torch.mean(torch.mean(selected_activations, dim=0)**2)
+
+        # ###
+        # if selected_activation is None:
+        #     return
+        # elif selected_activation == "prediction":
+        #     prediction_steps = predicted_z.shape[1]
+        #     scores = score_function(predicted_z, targets)
+        #     noise_scoring = torch.logsumexp(scores.view(-1, batch_size, prediction_steps),
+        #                                     dim=0)  # target_batch, target_step
+        #     valid_scores = torch.diagonal(scores, dim1=0, dim2=2)  # data_step, target_step, batch
+        #     valid_scores = torch.diagonal(valid_scores, dim1=0, dim2=1)  # batch, step
+        #
+        #     prediction_losses = -torch.mean(valid_scores - noise_scoring, dim=1)
+        #     loss = torch.mean(prediction_losses)
+        # else:
+        #     activations = normalized_activations[selected_activation].to(self.dev)
+        #     target = select_activation_slice(activations,
+        #                                      channel=self.control_dict['channel'],
+        #                                      channel_region=self.control_dict['channel_region'],
+        #                                      pitch=self.control_dict['pitch'],
+        #                                      pitch_region=self.control_dict['pitch_region'],
+        #                                      time=self.control_dict['time'],
+        #                                      time_region=self.control_dict['time_region'])
+        #     print("target mean:", torch.mean(torch.abs(target)).item(),
+        #           "rest mean:", torch.mean(torch.abs(activations)).item())
+        #     loss = torch.mean(torch.mean(target, dim=0)**2)
+        #     target *= 0.
+
         activation_energy_loss = torch.mean(torch.abs(flat_activations)**2)
         activation_energy_loss *= self.control_dict['activation_loss']
 
@@ -218,13 +260,13 @@ class DreamingCalculation:
 
         if loss != loss: # if loss is nan
             print("nan loss!")
-            return
-        loss.backward()
+        else:
+            loss.backward()
 
-        # normalize gradient
-        self.audio_input.grad /= torch.max(self.audio_input.grad).squeeze()
+            # normalize gradient
+            self.audio_input.grad /= torch.max(self.audio_input.grad).squeeze() + 1e-5
 
-        self.optimizer.step()
+            self.optimizer.step()
         #self.scheduler.step()
         self.time_meter.update(time.time() - tic)
 
@@ -241,16 +283,17 @@ class DreamingCalculation:
         if amplitude > 1.:
             self.audio_input.data /= amplitude
 
-        if self.control_dict['eq_bands'] is not None:
-            audio_input_length = self.audio_input.shape[2]
-            stft = torch.stft(self.audio_input.data[0], n_fft=512, hop_length=128, center=False)
-            stft_amp = abs(stft)
-            stft_ang = angle(stft)
-            stft_amp *= self.eq_bands.view(1, -1, 1)
-            stft = polar_to_complex(stft_amp, stft_ang)
-
-            data = istft(stft, hop_length=128)
-            self.audio_input.data = data[:, :audio_input_length].unsqueeze(0)
+        # if self.control_dict['eq_bands'] is not None:
+        #     audio_input_length = self.audio_input.shape[2]
+        #     stft = torch.stft(self.audio_input.data[0], n_fft=512, hop_length=128, center=True)
+        #     stft_amp = abs(stft)
+        #     stft_ang = angle(stft)
+        #     stft_amp *= self.eq_bands.view(1, -1, 1)
+        #     stft = polar_to_complex(stft_amp, stft_ang)
+        #
+        #     data = istft(stft, hop_length=128)
+        #     offset = max(0, (data.shape[1] - audio_input_length) // 2)
+        #     self.audio_input.data = data[:, offset:audio_input_length+offset].unsqueeze(0)
 
         try:
             input_scal = self.preprocessing_module(self.input_extender(self.audio_input))

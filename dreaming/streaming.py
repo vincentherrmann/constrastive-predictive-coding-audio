@@ -156,6 +156,7 @@ class SocketDataExchange:
                 data_writer.write(chunk)
                 receive_size = len(chunk)
                 message_length -= receive_size
+                #time.sleep(0.01)
 
                 # if len(chunk) != self.chunk_size:
                 #     print("chunk", chunk_number, "has size", len(chunk))
