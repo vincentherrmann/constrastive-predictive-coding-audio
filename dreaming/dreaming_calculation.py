@@ -67,7 +67,7 @@ class DreamingCalculation:
         # audio_input += (torch.rand(1, 1, audio_input.shape[2], device=self.dev) * 2. - 1.) * 1e-4
 
         self.soundclip_dict = OrderedDict(
-            [(os.path.basename(path), torchaudio.load(path)[0].unsqueeze(0).to(self.dev))
+            [(os.path.basename(path), torchaudio.load(path)[0].unsqueeze(0).to(self.dev) * 0.5)
              for path in sorted(glob.glob('loops_16khz/*.wav'))]
         )
 
@@ -147,6 +147,7 @@ class DreamingCalculation:
             self.eq_bands = self.control_dict['eq_bands']
             if self.eq_bands is not None:
                 self.eq_bands = torch.from_numpy(self.eq_bands).to(self.dev)
+            print("select soundclip", self.control_dict['selected_clip'])
             self.original_input = self.soundclip_dict[self.control_dict['selected_clip']]
         if self.control_dict is None:
             time.sleep(0.01)
@@ -184,7 +185,7 @@ class DreamingCalculation:
         del normalized_activations['z_code']
         del normalized_activations['prediction']
 
-        viz_activations = convert_activation_dict_type(normalized_activations, select_batch=0)
+        viz_activations = convert_activation_dict_type(normalized_activations, dtype=torch.float16, select_batch=0)
 
         selected_activations = normalized_activations.copy()
         for key, value in selected_activations.items():
@@ -205,7 +206,7 @@ class DreamingCalculation:
                 loss += torch.mean(prediction_losses)
                 continue
             layer = selected_activations[region['layer']]
-            layer = layer.unsqueeze(0)
+            #layer = layer.unsqueeze(0)
             slice = select_activation_slice(layer,
                                             channel=region['channel'], channel_region=region['channel region'],
                                             pitch=region['pitch'], pitch_region=region['pitch region'],
@@ -214,7 +215,7 @@ class DreamingCalculation:
 
         flat_selection = flatten_activations(selected_activations)
         flat_activations = flatten_activations(normalized_activations)
-        selected_activations = flat_activations[flat_selection > 0.]
+        selected_activations = flat_activations[flat_selection > 0.].view(batch_size, -1)
         if selected_activations.shape[0] != 0:
             loss += torch.mean(torch.mean(selected_activations, dim=0)**2)
 
@@ -314,8 +315,9 @@ class DreamingCalculation:
 
             data = pickle.dumps(data_dict)
             self.communicator.set_new_data(data)
-        except:
-            raise
+        except Exception as e:
+            print(e)
+            #raise
 
 
 if __name__ == '__main__':

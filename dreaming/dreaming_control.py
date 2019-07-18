@@ -48,13 +48,20 @@ defaults_dict = {
     #'audio_device': 'Soundflower (2ch)',
     #'audio_device': 'Saffire',
     'audio_device': 'Built-in Output',
+    #'audio_device': 'BW-FYE2  R',
+    #'audio_device': 'MADIface USB (23628221)',
+    #'audio_device': 'default',
     'lr': -3.,
     'time_jitter': 0.1,
-    'noise_loss': 0.1,
+    'noise_loss': 0.,
     'activation_loss': 0.,
-    'time_masking': 0,
-    'pitch_masking': 0,
+    'time_masking': 0.1,
+    'pitch_masking': 0.1,
     'batch_size': 8,
+    'default_sound_clip': 12,
+    'max_agg': 50.,
+    'num_frames': 32,
+    'sync_timing': 0.,
     'activation_names': activations,
     'activation_statistics': '../data_statistics_snapshots_model_2019-05-20_run_0_100000.pickle',
     'layout': '/Users/vincentherrmann/Documents/Projekte/Immersions/visualization/layouts/e25_version_3/e25_positions_interp_100.npy',
@@ -103,6 +110,7 @@ class DreamingControlApp:
         self.band_factors = None
         self.next_loop_start_time = 0.
         self.current_time = 0.
+        self.black_screen = False
 
         self.root = tk.Tk()
         self.root.title('Immersions')
@@ -141,53 +149,61 @@ class DreamingControlApp:
         self.start_audio_button = tk.Button(self.streaming_frame, text=' start_audio ', command=self.start_stop_audio)
         self.start_audio_button.grid(row=2, column=0)
 
+        self.start_audio_button = tk.Button(self.streaming_frame, text=' start performance ', command=self.start_performance)
+        self.start_audio_button.grid(row=3, column=0)
+
+        self.end_performance_button = tk.Button(self.streaming_frame, text=' end performance ',
+                                            command=self.end_performance)
+        self.end_performance_button.grid(row=4, column=0)
+
+        # dreaming frame
         # dreaming frame
         self.dreaming_frame = tk.Frame(self.root)
         self.dreaming_frame.pack()
 
         current_column = 0
 
-        self.lr_slider = MidiSlider(self.dreaming_frame, 'learning rate', default=-3.,
+        self.lr_slider = MidiSlider(self.dreaming_frame, 'learning rate', default=defaults['lr'],
                                     min=-5., max=2., resolution=0.1, length=200., command=self.send_control_dict)
         self.lr_slider.grid(row=0, column=current_column)
 
         current_column += 1
 
-        self.time_jitter_slider = MidiSlider(self.dreaming_frame, 'time jitter', default=0.1,
+        self.time_jitter_slider = MidiSlider(self.dreaming_frame, 'time jitter', default=defaults['time_jitter'],
                                     min=0., max=4., resolution=0.1, length=200., command=self.send_control_dict)
         self.time_jitter_slider.grid(row=0, column=current_column)
 
         current_column += 1
 
-        self.noise_loss_slider = MidiSlider(self.dreaming_frame, 'noise loss',
+        self.noise_loss_slider = MidiSlider(self.dreaming_frame, 'noise loss', default=defaults['noise_loss'],
                                              min=0., max=1., resolution=0.01, length=200.,
                                              command=self.send_control_dict)
         self.noise_loss_slider.grid(row=0, column=current_column)
 
         current_column += 1
 
-        self.activation_loss_slider = MidiSlider(self.dreaming_frame, 'activation loss',
+        self.activation_loss_slider = MidiSlider(self.dreaming_frame, 'activation loss', default=defaults['activation_loss'],
                                              min=0., max=50., resolution=0.1, length=200.,
                                              command=self.send_control_dict)
         self.activation_loss_slider.grid(row=0, column=current_column)
 
         current_column += 1
 
-        self.time_masking_slider = MidiSlider(self.dreaming_frame, 'time masking',
+        self.time_masking_slider = MidiSlider(self.dreaming_frame, 'time masking', default=defaults['time_masking'],
                                              min=0., max=1., resolution=0.01, length=200.,
                                              command=self.send_control_dict)
         self.time_masking_slider.grid(row=0, column=current_column)
 
         current_column += 1
 
-        self.pitch_masking_slider = MidiSlider(self.dreaming_frame, 'pitch masking',
+        self.pitch_masking_slider = MidiSlider(self.dreaming_frame, 'pitch masking', default=defaults['pitch_masking'],
                                              min=0., max=1., resolution=0.01, length=200.,
                                              command=self.send_control_dict)
         self.pitch_masking_slider.grid(row=0, column=current_column)
 
         current_column += 1
 
-        self.batch_size_slider = MidiSlider(self.dreaming_frame, 'batch_size', default=8,
+        self.batch_size_slider = MidiSlider(self.dreaming_frame, 'batch_size', default=defaults['batch_size'],
                                              min=0., max=64., resolution=1., length=200.,
                                              command=self.send_control_dict)
         self.batch_size_slider.grid(row=0, column=current_column)
@@ -196,7 +212,7 @@ class DreamingControlApp:
 
         self.sound_selection_frame = tk.Frame(self.dreaming_frame)
         self.soundclip_box = MidiListbox(self.sound_selection_frame, 'original soundclips', elements=audio_clips.keys(),
-                                         default_index=11, width=20, height=11)
+                                         default_index=defaults['default_sound_clip'], width=20, height=11)
         self.soundclip_box.grid(row=0, column=0)
 
         self.soundclip_button = MidiButton(self.sound_selection_frame, 'select clip', command=self.send_control_dict)
@@ -233,7 +249,17 @@ class DreamingControlApp:
 
         current_column += 1
 
-        self.activation_selection_frame = tk.Frame(self.dreaming_frame)
+        self.max_agg_slider = MidiSlider(self.dreaming_frame, 'max agg', default=defaults['max_agg'],
+                                         min=0., max=10., resolution=0.01, length=200.)
+        self.max_agg_slider.grid(row=0, column=current_column)
+
+
+        self.region_frame = tk.Frame(self.root)
+        self.region_frame.pack()
+
+        current_column = 0
+
+        self.activation_selection_frame = tk.Frame(self.region_frame)
         self.activations_box = MidiListbox(self.activation_selection_frame, 'activation selection', elements=self.activation_names,
                                            default_index=3, width=20, height=10)
         self.activations_box.grid(row=0, column=0)
@@ -248,72 +274,65 @@ class DreamingControlApp:
 
         current_column += 1
 
-        self.channel_slider = MidiSlider(self.dreaming_frame, 'channel',
+        self.channel_slider = MidiSlider(self.region_frame, 'channel',
                                          min=0., max=1., resolution=0.01, length=200.)
         self.channel_slider.grid(row=0, column=current_column)
 
         current_column += 1
 
-        self.channel_region_slider = MidiSlider(self.dreaming_frame, 'channel region',
+        self.channel_region_slider = MidiSlider(self.region_frame, 'channel region',
                                          min=0., max=1., resolution=0.01, length=200.)
         self.channel_region_slider.grid(row=0, column=current_column)
 
         current_column += 1
 
-        self.pitch_slider = MidiSlider(self.dreaming_frame, 'pitch',
+        self.pitch_slider = MidiSlider(self.region_frame, 'pitch',
                                          min=0., max=1., resolution=0.01, length=200.)
         self.pitch_slider.grid(row=0, column=current_column)
 
         current_column += 1
 
-        self.pitch_region_slider = MidiSlider(self.dreaming_frame, 'pitch region',
+        self.pitch_region_slider = MidiSlider(self.region_frame, 'pitch region',
                                          min=0., max=1., resolution=0.01, length=200.)
         self.pitch_region_slider.grid(row=0, column=current_column)
 
         current_column += 1
 
-        self.time_slider = MidiSlider(self.dreaming_frame, 'time',
+        self.time_slider = MidiSlider(self.region_frame, 'time',
                                          min=0., max=1., resolution=0.01, length=200.)
         self.time_slider.grid(row=0, column=current_column)
 
         current_column += 1
 
-        self.time_region_slider = MidiSlider(self.dreaming_frame, 'time region',
-                                         min=0., max=1., default=1., resolution=0.01, length=200.,
-                                         command=self.target_change)
+        self.time_region_slider = MidiSlider(self.region_frame, 'time region',
+                                         min=0., max=1., default=1., resolution=0.01, length=200.)
         self.time_region_slider.grid(row=0, column=current_column)
-
-        current_column += 1
-
-        self.max_agg_slider = MidiSlider(self.dreaming_frame, 'max agg', default=1.,
-                                         min=0., max=100., resolution=0.01, length=200.)
-        self.max_agg_slider.grid(row=0, column=current_column)
 
         # visualization frame
         self.viz_frame = tk.Frame(self.root)
         self.viz_frame.pack()
 
-        fig = Figure()
-        fig.set_size_inches(4, 4)
-        ax = fig.add_subplot(111)
-        self.scal_plot = ax.imshow(np.zeros([256, 629]), origin='lower', aspect='auto')
-        ax.axis('off')
-        self.scal_canvas = FigureCanvasTkAgg(fig, master=self.viz_frame)
-        self.scal_canvas.show()
-        self.scal_canvas.get_tk_widget().grid(row=0, column=0)
+        # fig = Figure()
+        # fig.set_size_inches(3, 3)
+        # ax = fig.add_subplot(111)
+        # self.scal_plot = ax.imshow(np.zeros([256, 629]), origin='lower', aspect='auto')
+        # ax.axis('off')
+        # self.scal_canvas = FigureCanvasTkAgg(fig, master=self.viz_frame)
+        # self.scal_canvas.show()
+        # self.scal_canvas.get_tk_widget().grid(row=0, column=0)
+        #
+        # fig = Figure()
+        # fig.set_size_inches(3, 3)
+        # ax = fig.add_subplot(111)
+        # self.scal_grad_plot = ax.imshow(np.zeros([256, 629]), origin='lower', aspect='auto')
+        # self.scal_grad_plot.set_data(np.random.randn(256, 629))
+        # ax.axis('off')
+        # self.scal_grad_canvas = FigureCanvasTkAgg(fig, master=self.viz_frame)
+        # self.scal_grad_canvas.show()
+        # self.scal_grad_canvas.get_tk_widget().grid(row=0, column=1)
 
         fig = Figure()
-        fig.set_size_inches(4, 4)
-        ax = fig.add_subplot(111)
-        self.scal_grad_plot = ax.imshow(np.zeros([256, 629]), origin='lower', aspect='auto')
-        self.scal_grad_plot.set_data(np.random.randn(256, 629))
-        ax.axis('off')
-        self.scal_grad_canvas = FigureCanvasTkAgg(fig, master=self.viz_frame)
-        self.scal_grad_canvas.show()
-        self.scal_grad_canvas.get_tk_widget().grid(row=0, column=1)
-
-        fig = Figure()
-        fig.set_size_inches(4, 4)
+        fig.set_size_inches(3, 3)
         self.loss_ax = fig.add_subplot(111)
         self.loss_plot = self.loss_ax.plot(np.random.rand(100))[0]
         self.loss_plot_canvas = FigureCanvasTkAgg(fig, master=self.viz_frame)
@@ -321,7 +340,7 @@ class DreamingControlApp:
         self.loss_plot_canvas.get_tk_widget().grid(row=0, column=2)
 
         fig = Figure()
-        fig.set_size_inches(4, 4)
+        fig.set_size_inches(3, 3)
         self.eq_ax = fig.add_subplot(111)
         self.eq_ax.set_ylim([0.85, 1.15])
         self.eq_plot = self.eq_ax.semilogx(np.ones(256))[0]
@@ -361,7 +380,7 @@ class DreamingControlApp:
                 print("use audio device", self.pyaudio.get_device_info_by_index(i)['name'])
                 break
         if audio_device_index is None:
-            audio_device_index = self.pyaudio.get_default_input_device_info()['index']
+            audio_device_index = self.pyaudio.get_default_output_device_info()['index']
             print("did not find audio device", defaults['audio_device'], "using default device",
                   self.pyaudio.get_device_info_by_index(i)['name'], "instead")
         self.audio_loop = AudioLoop(np.zeros(64000, dtype=np.int16), sample_rate=self.sample_rate)
@@ -370,7 +389,7 @@ class DreamingControlApp:
                                               rate=self.sample_rate,
                                               output=True,
                                               stream_callback=self.audio_loop.callback,
-                                              frames_per_buffer=4096,
+                                              frames_per_buffer=1024,
                                               output_device_index=audio_device_index)
 
         # load dummy data
@@ -386,7 +405,9 @@ class DreamingControlApp:
             del self.activation_dict['prediction']
         except:
             pass
-        self.audio_loop.set_new_signal(data['audio'])
+        for key, value in self.activation_dict.items():
+            self.activation_dict[key] = value * 0.
+        self.audio_loop.set_new_signal(data['audio'] * 0)
         self.draw_scalogram(data['scalogram'].numpy(), data['scalogram_grad'].numpy(), losses=[0.] * 100)
 
         # self.streaming_thread = threading.Thread(target=self.streaming_worker)
@@ -403,6 +424,8 @@ class DreamingControlApp:
         self.draw_target_thread.daemon = True
         self.draw_target_thread.start()
 
+        self.time_offset = 0
+
         # MIDI
         all_children = self.all_tk_children(self.dreaming_frame)
         midi_controls = [w for w in all_children if hasattr(w, 'name')]
@@ -414,9 +437,19 @@ class DreamingControlApp:
             print(e)
 
         self.audio_stream.start_stream()
-        self.set_new_data(data, 0)
-        self.root.after(0, self.main_viz_callback)
+        #self.set_new_data(data, 0)
+        #self.root.after(0, self.main_viz_callback)
         self.root.mainloop()
+
+    def start_performance(self, *args):
+        print("start performance")
+        self.root.after(0, self.main_viz_callback)
+        self.time_offset = self.audio_loop.get_next_loop_start_time() - self.audio_stream.get_time()
+        self.time_offset = self.time_offset % self.main_viz.loop_length
+        print("time offset:", self.time_offset)
+
+    def end_performance(self, *args):
+        self.black_screen = True
 
     def send_control_dict(self, *args):
         # try:
@@ -458,16 +491,18 @@ class DreamingControlApp:
             del self.activation_dict['prediction']
         except:
             pass
+        for key, value in self.activation_dict.items():
+            self.activation_dict[key] = value.type(torch.float)
         print("process activation dict time:", time.time() - tik)
         tik = time.time()
-        self.audio_loop.set_new_signal(data['audio'], earliest_switch_time=self.current_time + time_buffer)
+        self.audio_loop.set_new_signal(data['audio'], earliest_switch_time=0)#self.current_time + time_buffer)
         print("set audio signal time:", time.time() - tik)
         tik = time.time()
         self.main_viz.process_data_dict['activation_dict'] = self.activation_dict
         print("set activation dict time:", time.time() - tik)
-        # tik = time.time()
-        # self.draw_scalogram(data['scalogram'].numpy(), data['scalogram_grad'].numpy(), data['losses'])
-        # print("draw scalograms time:", time.time() - tik)
+        tik = time.time()
+        self.draw_scalogram(data['scalogram'].numpy(), data['scalogram_grad'].numpy(), data['losses'])
+        print("draw scalograms time:", time.time() - tik)
 
     def main_viz_callback(self):
         tik = time.time()
@@ -495,12 +530,12 @@ class DreamingControlApp:
         #print("main viz draw time:", time.time() - tik)
         tik = time.time()
 
-        # with self.draw_target_lock:
-            # if self.region_img is not None:
-            #     self.region_label.imgtk = self.region_img
-            #     self.region_label.configure(image=self.region_img)
-            #     self.region_img = None
-            #     self.new_target_img = False
+        with self.draw_target_lock:
+            if self.region_img is not None:
+                self.region_label.imgtk = self.region_img
+                self.region_label.configure(image=self.region_img)
+                self.region_img = None
+                self.new_target_img = False
         #print("set new target time:", time.time() - tik)
 
     def target_change(self, *args):
@@ -561,24 +596,24 @@ class DreamingControlApp:
                               (torch.max(selected_positions[:, 1]) - torch.min(selected_positions[:, 1]))
                 self.main_viz.new_target((target_position[0].item(), target_position[1].item()), target_size.item())
 
-            # plot = activation_plot(self.layout[0], values=activations.detach().cpu().numpy(), canvas=self.region_canvas,
-            #                        spread=0, min_agg=0., max_agg=1., alpha=255)
-            # plot = tf.set_background(plot, 'black')
-            # img = plot.to_pil()
-            # imgtk = ImageTk.PhotoImage(image=img)
-            # with self.draw_target_lock:
-            #     self.region_img = imgtk
-            #     self.new_target_img = True
+            plot = activation_plot(self.layout[0], values=activations.detach().cpu().numpy(), canvas=self.region_canvas,
+                                   spread=0, min_agg=0., max_agg=1., alpha=255)
+            plot = tf.set_background(plot, 'black')
+            img = plot.to_pil()
+            imgtk = ImageTk.PhotoImage(image=img)
+            with self.draw_target_lock:
+                self.region_img = imgtk
+                self.new_target_img = True
             time.sleep(0.1)
 
     def draw_scalogram(self, scalogram, scalogram_grad, losses=None):
-        self.scal_plot.set_data(scalogram)
-        self.scal_plot.set_clim(vmin=scalogram.min(), vmax=scalogram.max())
-        self.scal_canvas.draw()
-
-        self.scal_grad_plot.set_data(scalogram_grad)
-        self.scal_grad_plot.set_clim(vmin=scalogram_grad.min(), vmax=scalogram_grad.max())
-        self.scal_grad_canvas.draw()
+        # self.scal_plot.set_data(scalogram)
+        # self.scal_plot.set_clim(vmin=scalogram.min(), vmax=scalogram.max())
+        # self.scal_canvas.draw()
+        #
+        # self.scal_grad_plot.set_data(scalogram_grad)
+        # self.scal_grad_plot.set_clim(vmin=scalogram_grad.min(), vmax=scalogram_grad.max())
+        # self.scal_grad_canvas.draw()
 
         if losses is not None:
             losses = np.array(losses)
@@ -622,6 +657,7 @@ class MainVisualization:
         self.current_frame = 0
         self.loop_length = self.app.audio_loop.signal_length / self.app.sample_rate
         self.start_time = 0.
+        self.sync_timing = defaults_dict['sync_timing']
 
         self.rgb_yiq_transform = np.array([[0.299, 0.587, 0.114], [0.596, -0.274, -0.321], [0.211, -0.523, 0.311]],
                                           dtype=np.float32)
@@ -639,7 +675,7 @@ class MainVisualization:
         with open(app.defaults['hues'], 'rb') as handle:
             self.hues = pickle.load(handle)
         self.num_precalc_frames = len(self.connections)
-        self.num_frames = 8
+        self.num_frames = defaults_dict['num_frames']
         self.only_calculate_new_frames = True
 
         # UI
@@ -647,8 +683,13 @@ class MainVisualization:
         self.viz_window.title('Visualization')
         self.viz_window.configure(background='black')
         self.viz_window.geometry(str(self.width) + 'x' + str(self.height))
+        #self.viz_window.attributes("-fullscreen")
 
-        self.viz_window_size = (self.width, self.height)
+        # w, h = self.viz_window.winfo_screenwidth(), self.viz_window.winfo_screenheight()
+        # self.viz_window.overrideredirect(1)
+        # self.viz_window.geometry("%dx%d+0+0" % (w, h))
+
+        #self.viz_window_size = (self.width, self.height)
         self.target_size = min(self.width, self.height)
 
         self.viz_window_frame = tk.Frame(self.viz_window)
@@ -669,7 +710,7 @@ class MainVisualization:
         self.viz_window_label.imgtk = imgtk
         self.viz_window_label.configure(image=imgtk)
 
-        self.num_processes = 4
+        self.num_processes = 2
         self.process_manager = mp.Manager()
         input_dict = {
             'visualize': True,
@@ -686,13 +727,14 @@ class MainVisualization:
         self.process_data_dict = self.process_manager.dict(input_dict)
         #self.image_list = self.process_manager.list([None] * self.num_frames)
         self.image_queue = mp.Queue()
-        self.frame_list = []
+        self.frame_list = [None] * self.num_frames
         self.processes = []
         for i in range(self.num_processes):
             p = mp.Process(name='main_viz_worker' + str(i),
                            target=self.viz_process_worker, args=(i,
                                                                  self.process_data_dict,
                                                                  self.image_queue))
+            p.daemon = True
             p.start()
             self.processes.append(p)
 
@@ -769,39 +811,51 @@ class MainVisualization:
 
     def load_frame_list(self):
         while True:
-            frame_time, img = self.image_queue.get()
+            frame_number, img = self.image_queue.get()
             with self.frame_list_lock:
-                self.frame_list.append((frame_time, img))
-                self.frame_list.sort(key=lambda t: t[0])
+                self.frame_list[frame_number] = img
+                #self.frame_list.append((frame_time, img))
+                #self.frame_list.sort(key=lambda t: t[0])
             #if len(self.frame_list) > 100:
             #print("length of frame list:", len(self.frame_list))
 
     def draw(self, current_time):
-        current_time -= 0.5
+        #current_time -= 0.5
+
         self.target_size = min(self.viz_window.winfo_width(), self.viz_window.winfo_height())
+        #print("target size", self.target_size)
         #print("current time", current_time)
 
         tik = time.time()
 
+        # with self.frame_list_lock:
+        #     if len(self.frame_list) == 0:
+        #         self.viz_window_label.after(50, self.app.main_viz_callback)
+        #         print("skip frame")
+        #         return
+        #
+        #     frame_time, img = self.frame_list[0]
+        #     #print("frame list length:", len(self.frame_list))
+        #
+        #     while frame_time < current_time:
+        #         if len(self.frame_list) == 0:
+        #             self.viz_window_label.after(50, self.app.main_viz_callback)
+        #             print("skip frame")
+        #             return
+        #         else:
+        #             frame_time, img = self.frame_list.pop(0)
+        #
+        # while self.app.audio_stream.get_time() < frame_time:
+        #     time.sleep(0.02)
+
+        frame_number = int(((current_time + self.app.time_offset + self.sync_timing) % self.loop_length) / self.loop_length * self.num_frames)
+        print("frame number:", frame_number)
         with self.frame_list_lock:
-            if len(self.frame_list) == 0:
-                self.viz_window_label.after(50, self.app.main_viz_callback)
-                print("skip frame")
-                return
+            img = self.frame_list[frame_number]
 
-            frame_time, img = self.frame_list[0]
-            #print("frame list length:", len(self.frame_list))
-
-            while frame_time < current_time:
-                if len(self.frame_list) == 0:
-                    self.viz_window_label.after(50, self.app.main_viz_callback)
-                    print("skip frame")
-                    return
-                else:
-                    frame_time, img = self.frame_list.pop(0)
-
-        while self.app.audio_stream.get_time() < frame_time:
-            time.sleep(0.02)
+        if img is None:
+            self.viz_window_label.after(100, self.app.main_viz_callback)
+            return
 
         loading_duration = time.time() - tik
         # if loading_duration > 0.02:
@@ -810,6 +864,9 @@ class MainVisualization:
         tik = time.time()
         img = img.reshape(self.width, self.height, 4)
         img = img[::-1, ::1, :]
+
+        if self.app.black_screen:
+            img *= 0
 
         target_size = min(self.viz_window.winfo_width(), self.viz_window.winfo_height())
 
@@ -841,7 +898,7 @@ class MainVisualization:
             print("transform", transform_duration)
             print("imgtk", imgtk_duration)
             print("update", update_duration)
-        self.viz_window_label.after(40, self.app.main_viz_callback)
+        self.viz_window_label.after(50, self.app.main_viz_callback)
 
     def viz_process_worker(self, number, input_dict, image_queue):
         activation_dict = input_dict['activation_dict']
@@ -863,9 +920,8 @@ class MainVisualization:
                 if calc_duration > 4.:
                     print("viz calculation too slow!")
                 if self.only_calculate_new_frames:
-
                     while True:
-                        if calc_duration > self.loop_length:
+                        if calc_duration > (self.loop_length-0.1):
                             break
                         calc_duration = time.time() - tik
                         time.sleep(0.05)
@@ -907,14 +963,15 @@ class MainVisualization:
                 focus_plot = tf.set_background(focus_plot, 'black')
                 rgb_focus = focus_plot.data.view(dtype='uint8').reshape(-1, 4)[:, :3].astype(np.float32) / 255.
 
-            flat_activations = flatten_activations(current_activations) ** 2
+            flat_activations = flatten_activations(current_activations) #** 2
             flat_activations[flat_activations != flat_activations] = 0  # set nans to 0
 
-            max_activation = flat_activations.mean().item() * 0.03
+            max_agg = input_dict['max_agg']
+            max_activation = flat_activations.mean().item() / max_agg * 3.
 
             plot = activation_plot(timestep_layout, values=flat_activations.detach().cpu().numpy(),
                                    canvas=self.viz_window_canvas, spread=1, alpha=100, min_agg=0,
-                                   max_agg=input_dict['max_agg'],
+                                   max_agg=max_agg,
                                    colormap=[(0, 0, 0), (255, 255, 255)])
 
             plot = tf.set_background(plot, 'black')
@@ -947,15 +1004,15 @@ class MainVisualization:
             transform_state = self.transform_state(current_absolute_time, input_dict['transform_start_time'],
                                                    input_dict['transform_start_state'], input_dict['transform_target'])
 
-            affine_parameters = self.calc_affine_parameters_pil(transform_state)
+            # affine_parameters = self.calc_affine_parameters_pil(transform_state)
 
-            target_size = input_dict['target_size']
+            # target_size = input_dict['target_size']
             # img = img.transform((target_size, target_size), Image.AFFINE, affine_parameters, resample=Image.BILINEAR)
 
             #print("write frame", frame_number)
-            print("frame number:", frame_number)
-            print("absolute time:", current_absolute_time)
-            image_queue.put((current_absolute_time, rgb_plot))
+            #print("frame number:", frame_number)
+            #print("absolute time:", current_absolute_time)
+            image_queue.put((frame_number, rgb_plot))
             #output_images[frame_number] = img
             i += 1
 

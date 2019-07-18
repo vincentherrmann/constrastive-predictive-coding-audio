@@ -144,9 +144,11 @@ class SocketDataExchange:
         while self.stream:
             message_length = int.from_bytes(self.connection.recv(64), byteorder='big', signed=False)
             target_data_length = message_length
-            print("receiving message with size", message_length)
             if message_length == 0:
                 continue
+                time.sleep(0.01)
+            print("receiving message with size", message_length)
+            tik = time.time()
             data_io = io.BytesIO()
             data_writer = io.BufferedWriter(data_io, message_length)
             chunk_number = 0
@@ -173,6 +175,9 @@ class SocketDataExchange:
             #data_bytes = data.getvalue()
             if len(data) == target_data_length:
                 print("message received")
+                duration = time.time() - tik
+                if duration > 1.:
+                    print("it took", duration, "seconds")
             else:
                 print("wrong received message length:", len(data))
                 #raise

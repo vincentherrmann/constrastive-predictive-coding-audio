@@ -68,11 +68,12 @@ class MidiController:
                 self.lock.release()
                 try:
                     target = self.control_mapping[control]
+                    target.set_value(value)
                 except KeyError:
                     print("control", control, "has no target")
-                target.set_value(value)
                 self.lock.acquire()
             self.lock.release()
+            time.sleep(0.1)
 
     def send_control_message(self, control, value, channel=0):
         self.outport.send(Message('control_change', channel=channel, control=control, value=value))
@@ -155,7 +156,7 @@ class MidiSwitch(tk.Frame):
 
         self.name = label
         self.var = tk.IntVar(value=default)
-        self.checkbutton = tk.Checkbutton(self, text=label, command=self.value_changed)
+        self.checkbutton = tk.Checkbutton(self, variable=self.var, text=label, command=self.value_changed)
         self.checkbutton.grid(row=0, column=0)
 
         self.command = command
@@ -170,7 +171,7 @@ class MidiSwitch(tk.Frame):
             self.command()
 
     def set_value(self, midi_value):
-        value = midi_value // 127
+        value = 1 if midi_value > 0 else 0
         self.var.set(value)
         if self.command is not None:
             self.command()
