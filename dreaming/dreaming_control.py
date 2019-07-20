@@ -47,9 +47,9 @@ defaults_dict = {
     'host': '127.0.0.1',
     #'audio_device': 'Soundflower (2ch)',
     #'audio_device': 'Saffire',
-    'audio_device': 'Built-in Output',
+    #'audio_device': 'Built-in Output',
     #'audio_device': 'BW-FYE2  R',
-    #'audio_device': 'MADIface USB (23628221)',
+    'audio_device': 'MADIface USB (23628221)',
     #'audio_device': 'default',
     'lr': -3.,
     'time_jitter': 0.1,
@@ -59,10 +59,12 @@ defaults_dict = {
     'pitch_masking': 0.1,
     'batch_size': 8,
     'default_sound_clip': 12,
-    'max_agg': 50.,
+    'max_agg': 5.,
     'num_frames': 32,
-    'sync_timing': 0.,
+    'sync_timing': 2.8,
     'activation_names': activations,
+    'audio_clip': 'silence.wav',
+    'selected_layer_name': 'scalogram_block_0_main_conv_1',
     'activation_statistics': '../data_statistics_snapshots_model_2019-05-20_run_0_100000.pickle',
     'layout': '/Users/vincentherrmann/Documents/Projekte/Immersions/visualization/layouts/e25_version_3/e25_positions_interp_100.npy',
     'hues': '/Users/vincentherrmann/Documents/Projekte/Immersions/visualization/layouts/e25_version_3/e25_positions_interp_100_hues.p',
@@ -111,6 +113,8 @@ class DreamingControlApp:
         self.next_loop_start_time = 0.
         self.current_time = 0.
         self.black_screen = False
+        self.audio_clip = defaults['audio_clip']
+        self.select_layer_name = defaults['selected_layer_name']
 
         self.root = tk.Tk()
         self.root.title('Immersions')
@@ -215,7 +219,7 @@ class DreamingControlApp:
                                          default_index=defaults['default_sound_clip'], width=20, height=11)
         self.soundclip_box.grid(row=0, column=0)
 
-        self.soundclip_button = MidiButton(self.sound_selection_frame, 'select clip', command=self.send_control_dict)
+        self.soundclip_button = MidiButton(self.sound_selection_frame, 'select clip', command=self.set_audio_clip)
         self.soundclip_button.grid(row=1, column=0)
         self.sound_selection_frame.grid(row=0, column=current_column)
 
@@ -250,7 +254,7 @@ class DreamingControlApp:
         current_column += 1
 
         self.max_agg_slider = MidiSlider(self.dreaming_frame, 'max agg', default=defaults['max_agg'],
-                                         min=0., max=10., resolution=0.01, length=200.)
+                                         min=0., max=50., resolution=0.01, length=200.)
         self.max_agg_slider.grid(row=0, column=current_column)
 
 
@@ -261,7 +265,7 @@ class DreamingControlApp:
 
         self.activation_selection_frame = tk.Frame(self.region_frame)
         self.activations_box = MidiListbox(self.activation_selection_frame, 'activation selection', elements=self.activation_names,
-                                           default_index=3, width=20, height=10)
+                                           default_index=3, width=30, height=10)
         self.activations_box.grid(row=0, column=0)
 
         self.keep_targets_switch = MidiSwitch(self.activation_selection_frame, 'keep targets')
@@ -451,6 +455,10 @@ class DreamingControlApp:
     def end_performance(self, *args):
         self.black_screen = True
 
+    def set_audio_clip(self, *args):
+        self.audio_clip = audio_clip_names[self.soundclip_box.get_value()]
+        self.send_control_dict()
+
     def send_control_dict(self, *args):
         # try:
         #     activation = self.activation_names[self.activations_box.curselection()[0]]
@@ -459,7 +467,7 @@ class DreamingControlApp:
 
         control_dict = {
             'selected_regions': self.selected_regions,
-            'selected_clip': audio_clip_names[self.soundclip_box.get_value()],
+            'selected_clip': self.audio_clip,
             'lr': self.lr_slider.get_value(),
             'time_jitter': self.time_jitter_slider.get_value(),
             'noise_loss': self.noise_loss_slider.get_value(),
@@ -539,8 +547,6 @@ class DreamingControlApp:
         #print("set new target time:", time.time() - tik)
 
     def target_change(self, *args):
-        self.send_control_dict()
-
         for value in self.blank_activations.values():
             value *= 0.
 
@@ -560,6 +566,8 @@ class DreamingControlApp:
                 self.selected_regions.append(this_region)
             else:
                 self.selected_regions = [this_region]
+
+        self.send_control_dict()
 
     def draw_target_viz(self):
         while True:
@@ -849,7 +857,7 @@ class MainVisualization:
         #     time.sleep(0.02)
 
         frame_number = int(((current_time + self.app.time_offset + self.sync_timing) % self.loop_length) / self.loop_length * self.num_frames)
-        print("frame number:", frame_number)
+        #print("frame number:", frame_number)
         with self.frame_list_lock:
             img = self.frame_list[frame_number]
 
@@ -969,6 +977,12 @@ class MainVisualization:
             max_agg = input_dict['max_agg']
             max_activation = flat_activations.mean().item() / max_agg * 3.
 
+            # if max_activation <= 0:
+            #     image_queue.put((frame_number, None))
+            #     print("all activations are 0.")
+            #     i += 1
+            #     continue
+
             plot = activation_plot(timestep_layout, values=flat_activations.detach().cpu().numpy(),
                                    canvas=self.viz_window_canvas, spread=1, alpha=100, min_agg=0,
                                    max_agg=max_agg,
@@ -1012,6 +1026,7 @@ class MainVisualization:
             #print("write frame", frame_number)
             #print("frame number:", frame_number)
             #print("absolute time:", current_absolute_time)
+            #if image_queue.qsize() < 50:
             image_queue.put((frame_number, rgb_plot))
             #output_images[frame_number] = img
             i += 1

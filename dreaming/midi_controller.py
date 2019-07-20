@@ -121,7 +121,7 @@ class MidiListbox(tk.Frame):
 
         self.name = label
         self.label = tk.Label(self, text=label).grid(row=0, column=0)
-        self.listbox = tk.Listbox(self, width=width, height=height)
+        self.listbox = tk.Listbox(self, width=width, height=height, exportselection=False)
         for element in elements:
             self.listbox.insert(tk.END, element)
         self.listbox.activate(default_index)
