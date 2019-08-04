@@ -8,6 +8,8 @@ import bisect
 import torchaudio
 import random
 import itertools
+import mutagen.mp3
+import os
 from pathlib import Path
 
 
@@ -33,7 +35,7 @@ class AudioDataset(torch.utils.data.Dataset):
         self.dummy_load = False
         self.cross_files = cross_files
 
-        self.files = list_all_audio_files(self.location, allowed_types=['.wav'])
+        self.files = list_all_audio_files(self.location, allowed_types=['.wav', '.mp3', '.aiff'])
         if max_file_count is None:
             self.max_file_count = len(self.files)
         else:
@@ -78,8 +80,13 @@ class AudioDataset(torch.utils.data.Dataset):
         """
         start_samples = [0]
         for idx in range(self.max_file_count):
-            file_data = self.load_file(str(self.files[idx]))
-            next_start_sample = start_samples[-1] + file_data.shape[0]
+            path = str(self.files[idx])
+            if os.path.splitext(path)[1] == '.mp3':
+                this_file = mutagen.mp3.MP3(path)
+                file_length = int(this_file.info.length * this_file.info.sample_rate)
+            else:
+                file_length = self.load_file(path).shape[0]
+            next_start_sample = start_samples[-1] + file_length
             if not self.cross_files:
                 next_start_sample -= self.item_length
             start_samples.append(next_start_sample)

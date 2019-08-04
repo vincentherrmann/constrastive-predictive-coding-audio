@@ -60,8 +60,12 @@ class TestAudioDataset(TestCase):
 
 
     def test_minibatch_performance(self):
-        dataset = AudioDataset(location='/Users/vincentherrmann/Documents/Projekte/Immersions/MelodicProgressiveHouse_Tracks_test',
+        #dataset = '/Users/vincentherrmann/Documents/Projekte/Immersions/MelodicProgressiveHouse_Tracks_test'
+        dataset = '/Volumes/Elements/Datasets/MelodicProgressiveHouse_mp3'
+        dataset = AudioDataset(location=dataset,
                                item_length=12465)
+
+        test_example = dataset[100]
 
         num_workers = 2
         num_batches = 100
@@ -74,6 +78,7 @@ class TestAudioDataset(TestCase):
 
         def calc_batches(num=1):
             for i in range(num):
+                print("batch number", i)
                 mb = next(dataloader_iter)
             return mb
 

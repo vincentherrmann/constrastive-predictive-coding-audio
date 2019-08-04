@@ -21,6 +21,9 @@ scalogram_block_default_dict = {'in_channels': 64,
 
 scalogram_resnet_default_dict = {'model': ScalogramResidualEncoder,
                                  'phase': True,
+                                 'scalogram_offset_zero': False,
+                                 'scalogram_output_power': 1.,
+                                 'scalogram_pooling': None,
                                  'blocks': [scalogram_block_default_dict,
                                             scalogram_block_default_dict,
                                             scalogram_block_default_dict],
@@ -266,3 +269,4 @@ scalogram_resnet_classification_1['blocks'][3]['batch_norm'] = False
 
 scalogram_resnet_classification_1['blocks'].append(block_4)
 
+pass

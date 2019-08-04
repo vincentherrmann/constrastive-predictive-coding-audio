@@ -32,7 +32,8 @@ cqt_default_dict = {'sample_rate': 16000,
 
 
 class PreprocessingModule(nn.Module):
-    def __init__(self, cqt_dict=None, phase=False, output_requires_grad=False):
+    def __init__(self, cqt_dict=None, phase=False, output_requires_grad=False, offset_zero=False, output_power=1.,
+                 pooling=None):
         super().__init__()
         self.downsampling_factor = 1
         self.receptive_field = 1
@@ -57,9 +58,20 @@ class PreprocessingModule(nn.Module):
                                               hop_length=cqt_dict['hop_length'])
 
         #self.output_requires_grad = output_requires_grad
+        self.output_power = output_power
+        if offset_zero:
+            self.offset = 1e-9
+            self.log_offset = -math.log(self.offset)
+            self.normalization_factor = 1 / self.log_offset
+        else:
+            self.offset = 0
+            self.log_offset = 0
+            self.normalization_factor = 1.
+        self.pooling = pooling
         self.output = None
 
     def forward(self, x):
+        # x shape:  batch, channels, samples
         if self.cqt is None:
             return x
         else:
@@ -67,12 +79,19 @@ class PreprocessingModule(nn.Module):
 
         if self.phase_diff is not None:
             amp = torch.pow(abs(x[:, :, 1:]), 2)
-            amp = torch.log(amp + 1e-9)
+            amp = torch.log(amp + self.offset) + self.log_offset
             phi = self.phase_diff(angle(x))
             x = torch.stack([amp, phi], dim=1)
         else:
             x = torch.pow(abs(x), 2)
-            x = torch.log(x + 1e-9).unsqueeze(1)
+            x = torch.log(x + self.offset).unsqueeze(1)
+            x += self.log_offset
+
+        if self.pooling is not None:
+            x = F.max_pool2d(x, self.pooling)
+
+        x *= self.normalization_factor
+        x = x**self.output_power
 
         #if self.output_requires_grad:
         #    x.requires_grad = True
@@ -433,8 +452,8 @@ class ScalogramEncoderBlock(nn.Module):
             x = m(x)
 
         main = x
-        x = original_input
         if self.residual:
+            x = original_input
             for m in self.residual_modules:
                 x = m(x)
             res = x

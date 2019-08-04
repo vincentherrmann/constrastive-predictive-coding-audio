@@ -77,7 +77,10 @@ def setup_model(cqt_params=cqt_default_dict,
     encoder_params['activation_register'] = activation_register
     ar_params['activation_register'] = activation_register
     preprocessing_module = PreprocessingModule(cqt_dict=cqt_params,
-                                               phase=encoder_params['phase'])
+                                               phase=encoder_params['phase'],
+                                               offset_zero=encoder_params['scalogram_offset_zero'],
+                                               output_power=encoder_params['scalogram_output_power'],
+                                               pooling=encoder_params['scalogram_pooling'])
     encoder = encoder_params['model'](args_dict=encoder_params,
                                       preprocessing_module=preprocessing_module)
     ar_model = ar_params['model'](args_dict=ar_params)

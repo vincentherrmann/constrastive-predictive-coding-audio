@@ -45,11 +45,11 @@ activations = [
 defaults_dict = {
     'port': 2222,
     'host': '127.0.0.1',
-    #'audio_device': 'Soundflower (2ch)',
+    'audio_device': 'Soundflower (2ch)',
     #'audio_device': 'Saffire',
     #'audio_device': 'Built-in Output',
     #'audio_device': 'BW-FYE2  R',
-    'audio_device': 'MADIface USB (23628221)',
+    #'audio_device': 'MADIface USB (23628221)',
     #'audio_device': 'default',
     'lr': -3.,
     'time_jitter': 0.1,
