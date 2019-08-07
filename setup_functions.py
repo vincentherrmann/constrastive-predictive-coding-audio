@@ -32,12 +32,13 @@ class CPCLogger(TensorboardLogger):
         self.score_meter.reset()
 
     def extended_validation_function(self):
-        print("start task test")
-        task_data, task_labels = self.trainer.calc_test_task_data(batch_size=self.validation_batch_size, num_workers=4)
-        task_thread = threading.Thread(target=self.task_function,
-                                       args=(task_data, task_labels, self.trainer.training_step),
-                                       daemon=False)
-        task_thread.start()
+        if self.trainer.test_task_set is not None:
+            print("start task test")
+            task_data, task_labels = self.trainer.calc_test_task_data(batch_size=self.validation_batch_size, num_workers=4)
+            task_thread = threading.Thread(target=self.task_function,
+                                           args=(task_data, task_labels, self.trainer.training_step),
+                                           daemon=False)
+            task_thread.start()
 
         losses, accuracies, mean_score, mmi_lb = self.trainer.validate(batch_size=self.validation_batch_size,
                                                                        num_workers=4,
@@ -80,7 +81,8 @@ def setup_model(cqt_params=cqt_default_dict,
                                                phase=encoder_params['phase'],
                                                offset_zero=encoder_params['scalogram_offset_zero'],
                                                output_power=encoder_params['scalogram_output_power'],
-                                               pooling=encoder_params['scalogram_pooling'])
+                                               pooling=encoder_params['scalogram_pooling'],
+                                               scaling=encoder_params['scalogram_scaling'])
     encoder = encoder_params['model'](args_dict=encoder_params,
                                       preprocessing_module=preprocessing_module)
     ar_model = ar_params['model'](args_dict=ar_params)
@@ -193,17 +195,22 @@ def setup_ce_trainer(model,
 
     training_set = AudioDataset(dataset_args['training_set'],
                                 item_length=item_length,
-                                unique_length=downsampling_factor * dataset_args['unique_steps'])
+                                unique_length=downsampling_factor * dataset_args['unique_steps'],
+                                sampling_rate=dataset_args['sample_rate'])
     print("training set length:", len(training_set))
 
     validation_set = AudioDataset(dataset_args['validation_set'],
                                   item_length=item_length,
-                                  unique_length=trainer_args['prediction_steps'] * downsampling_factor)
+                                  unique_length=trainer_args['prediction_steps'] * downsampling_factor,
+                                  sampling_rate=dataset_args['sample_rate'])
     print("validation set length:", len(validation_set))
 
-    task_set = AudioTestingDataset(dataset_args['task_set'],
+    if dataset_args['task_set'] is not None:
+        task_set = AudioTestingDataset(dataset_args['task_set'],
                                    item_length=item_length)
-    print("task set length:", len(task_set))
+        print("task set length:", len(task_set))
+    else:
+        task_set = None
 
     trainer = ContrastiveEstimationTrainer(model=model,
                                            dataset=training_set,

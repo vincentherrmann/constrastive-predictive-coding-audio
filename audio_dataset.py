@@ -61,17 +61,18 @@ class AudioDataset(torch.utils.data.Dataset):
         self.calculate_length()
 
     def load_file(self, file, frames=-1, start=0):
+        if frames == 0:
+            print("Error: zero frames requested")
         if frames == -1:
             data, _ = torchaudio.load(file,
                                       normalization=True)
-            return data.squeeze().type(self.dtype)
-        if frames == 0:
-            print("Error: zero frames requested")
-        data, _ = torchaudio.load(file,
-                                  normalization=True,
-                                  num_frames=int(frames),
-                                  offset=int(start))
-        return data.squeeze().type(self.dtype)
+        else:
+            data, _ = torchaudio.load(file,
+                                      normalization=True,
+                                      num_frames=int(frames),
+                                      offset=int(start))
+        data = data[0, :]
+        return data.type(self.dtype)
 
     def calculate_length(self):
         """

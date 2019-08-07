@@ -23,15 +23,15 @@ class PositionalEncoder(nn.Module):
                 pe[pos, i] = math.sin(pi * pos / (max_wavelength ** ((2 * i) / code_size)))
                 pe[pos, i + 1] = math.cos(pi * pos / (max_wavelength ** ((2 * i) / code_size)))
 
-        self.register_buffer('pe', pe.unsqueeze(0))
+        self.register_buffer('pe', pe.unsqueeze(1))
 
     def forward(self, x):
 
         # make code relatively larger
         x *= math.sqrt(self.code_size)
         # add constant to embedding
-        seq_len = x.size(1)
-        x = x + self.pe[:, :seq_len]
+        seq_len = x.size(0)
+        x = x + self.pe[:seq_len]
         return x
 
 
@@ -70,7 +70,7 @@ class AttentionModel(nn.Module):
         self.end_layer = nn.Linear(channels, args_dict['output_size'])
 
     def forward(self, x):
-        x = x.transpose(1, 0)
+        x = x.permute(2, 0, 1)
         x = self.positional_encoder(x)  # sequence, batch, channels
 
         x = self.encoder(x)

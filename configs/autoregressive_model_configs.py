@@ -19,6 +19,24 @@ ar_conv_default_dict = {
 ar_conv_architecture_1 = ar_conv_default_dict.copy()
 ar_conv_architecture_1['channel_count'] = [256, 512, 512, 256]
 
+
+# 60 5
+# 56 5
+# 52 :2 5
+# 22 5
+# 18 :2 5
+#  5 5
+
+
+# 43 5
+# 39 4
+# 36 :2 3
+# 16 3
+# 14 :2 3
+#  5 5
+
+
+
 ar_conv_architecture_2 = ar_conv_default_dict.copy()
 ar_conv_architecture_2['kernel_sizes'] = [5, 5, 5, 5, 5, 5]
 ar_conv_architecture_2['channel_count'] = [256, 512, 512, 256, 256, 256, 256]
@@ -30,6 +48,12 @@ ar_conv_architecture_2['residual'] = True
 ar_conv_architecture_3 = ar_conv_architecture_2.copy()
 ar_conv_architecture_3['channel_count'] = [512, 512, 512, 256, 256, 256, 256]
 ar_conv_architecture_3['encoding_size'] = 512
+
+ar_conv_architecture_4 = ar_conv_architecture_3.copy()
+ar_conv_architecture_4['channel_count'] = [512, 1024, 512, 512, 256, 256, 256]
+
+ar_conv_architecture_5 = ar_conv_architecture_4.copy()
+ar_conv_architecture_5['kernel_sizes'] = [5, 4, 3, 3, 3, 5]
 
 
 ar_block_default_dict = scalogram_block_default_dict.copy()
@@ -87,3 +111,9 @@ attention_architecture_1 = attention_default_dict.copy()
 attention_architecture_1['output_size'] = 256
 attention_architecture_1['num_layers'] = 3
 attention_architecture_1['ar_code_size'] = 256
+
+attention_architecture_2 = attention_default_dict.copy()
+attention_architecture_2['output_size'] = 256
+attention_architecture_2['num_layers'] = 6
+attention_architecture_2['feedforward_size'] = 2048
+attention_architecture_2['ar_code_size'] = 256

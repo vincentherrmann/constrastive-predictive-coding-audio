@@ -23,6 +23,7 @@ scalogram_resnet_default_dict = {'model': ScalogramResidualEncoder,
                                  'phase': True,
                                  'scalogram_offset_zero': False,
                                  'scalogram_output_power': 1.,
+                                 'scalogram_scaling': 1.,
                                  'scalogram_pooling': None,
                                  'blocks': [scalogram_block_default_dict,
                                             scalogram_block_default_dict,
@@ -254,6 +255,67 @@ scalogram_resnet_architecture_7['blocks'][2]['in_channels'] = 128
 scalogram_resnet_architecture_7['blocks'][2]['out_channels'] = 256
 scalogram_resnet_architecture_7['blocks'][3]['in_channels'] = 256
 scalogram_resnet_architecture_7['blocks'][3]['out_channels'] = 512
+
+
+# resnet architecture 8 (for high-res scalogram, i.e. 292 pitches)
+block_3x3_bn = block_3x3.copy()
+block_3x3_bn['batch_norm'] = True
+
+block_0 = block_3x3_bn.copy()
+block_0['in_channels'] = 1
+block_0['out_channels'] = 32
+block_0['kernel_size_1'] = (65, 1)
+block_0['padding_1'] = 0
+block_0['stride_2'] = 2
+
+block_1 = block_3x3_bn.copy()
+block_1['in_channels'] = 32
+block_1['out_channels'] = 32
+
+block_2 = block_3x3_bn.copy()
+block_2['in_channels'] = 32
+block_2['out_channels'] = 64
+block_2['kernel_size_1'] = (33, 1)
+block_2['padding_1'] = 0
+block_2['stride_2'] = 2
+
+block_3 = block_3x3_bn.copy()
+block_3['in_channels'] = 64
+block_3['out_channels'] = 64
+
+block_4 = block_3x3_bn.copy()
+block_4['in_channels'] = 64
+block_4['out_channels'] = 128
+block_4['kernel_size_1'] = (16, 1)
+block_4['padding_1'] = 0
+block_4['stride_2'] = 2
+
+block_5 = block_3x3_bn.copy()
+block_5['in_channels'] = 128
+block_5['out_channels'] = 128
+
+block_6 = block_3x3_bn.copy()
+block_6['in_channels'] = 128
+block_6['out_channels'] = 256
+block_6['kernel_size_1'] = (9, 1)
+block_6['padding_1'] = 0
+
+block_7 = block_3x3_bn.copy()
+block_7['in_channels'] = 256
+block_7['out_channels'] = 512
+block_7['padding_1'] = 0
+block_7['padding_2'] = 0
+
+scalogram_resnet_architecture_8 = scalogram_resnet_default_dict.copy()
+scalogram_resnet_architecture_8['phase'] = False
+scalogram_resnet_architecture_8['scalogram_offset_zero'] = True
+scalogram_resnet_architecture_8['scalogram_output_power'] = 2.
+scalogram_resnet_architecture_8['scalogram_pooling'] = [1, 2]
+scalogram_resnet_architecture_8['blocks'] = [block_0, block_1, block_2, block_3,
+                                             block_4, block_5, block_6, block_7]
+
+scalogram_resnet_architecture_9 = scalogram_resnet_architecture_8.copy()
+scalogram_resnet_architecture_9['scalogram_scaling'] = 10.
 
 
 # classification architecture

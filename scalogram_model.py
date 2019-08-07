@@ -33,7 +33,7 @@ cqt_default_dict = {'sample_rate': 16000,
 
 class PreprocessingModule(nn.Module):
     def __init__(self, cqt_dict=None, phase=False, output_requires_grad=False, offset_zero=False, output_power=1.,
-                 pooling=None):
+                 pooling=None, scaling=1.):
         super().__init__()
         self.downsampling_factor = 1
         self.receptive_field = 1
@@ -62,12 +62,14 @@ class PreprocessingModule(nn.Module):
         if offset_zero:
             self.offset = 1e-9
             self.log_offset = -math.log(self.offset)
-            self.normalization_factor = 1 / self.log_offset
+            self.normalization_factor = scaling / self.log_offset
         else:
             self.offset = 0
             self.log_offset = 0
-            self.normalization_factor = 1.
+            self.normalization_factor = scaling
         self.pooling = pooling
+        if pooling is not None:
+            self.downsampling_factor *= pooling[1]
         self.output = None
 
     def forward(self, x):
@@ -510,7 +512,7 @@ class ScalogramResidualEncoder(nn.Module):
             self.receptive_field += (block_dict['kernel_size_1'][1] - 1) * self.downsampling_factor
             self.downsampling_factor *= block_dict['pooling_1'] * block_dict['stride_1']
             self.receptive_field += (block_dict['kernel_size_2'][1] - 1) * self.downsampling_factor
-            self.downsampling_factor *= block_dict['stride_2'] * block_dict['stride_2']
+            self.downsampling_factor *= block_dict['pooling_2'] * block_dict['stride_2']
 
             if self.verbose > 0:
                 print("receptive field after block", i, ":", self.receptive_field)

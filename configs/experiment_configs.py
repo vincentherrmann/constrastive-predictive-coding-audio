@@ -123,6 +123,19 @@ experiments['e26'] = copy.deepcopy(experiments['e22'])
 experiments['e26']['training_config']['train_batch_size'] = 16
 experiments['e26']['training_config']['gradient_penalty_factor'] = 1.
 
+experiments['e27'] = copy.deepcopy(experiments['e26'])
+experiments['e27']['encoder_config'] = scalogram_resnet_configs.scalogram_resnet_architecture_8
+experiments['e27']['ar_model_config'] = autoregressive_model_configs.attention_architecture_2
+experiments['e27']['cqt_config'] = cqt_configs.cqt_high_res_dict
+experiments['e27']['dataset_config'] = dataset_configs.melodic_progressive_house_high_res
+
+experiments['e28'] = copy.deepcopy(experiments['e27'])
+experiments['e28']['ar_model_config'] = autoregressive_model_configs.ar_conv_architecture_4
+
+experiments['e29'] = copy.deepcopy(experiments['e28'])
+experiments['e29']['encoder_config'] = scalogram_resnet_configs.scalogram_resnet_architecture_9
+experiments['e29']['ar_model_config'] = autoregressive_model_configs.ar_conv_architecture_5
+experiments['e29']['training_config']['visible_steps'] = 43
 
 experiments['c1'] = classification_default_dict
 experiments['c1']['training_config']['learning_rate'] = 1e-3

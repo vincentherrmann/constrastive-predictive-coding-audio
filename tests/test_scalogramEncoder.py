@@ -159,6 +159,15 @@ class TestScalogramEncoder(TestCase):
         test_result = encoder(torch.rand(1, 2, 256, encoder.receptive_field + 60*encoder.downsampling_factor))
         print("encoder time:", time.time() - tic)
 
+    def test_resnet_highres_architecture(self):
+        args = scalogram_resnet_architecture_8
+        args['activation_register'] = ActivationRegister(batch_filter=0)
+        encoder = ScalogramResidualEncoder(args_dict=args, verbose=2)
+        test_input = torch.zeros(1, 1, 292, encoder.receptive_field + 60*encoder.downsampling_factor)
+        test_result = encoder(test_input)
+        pass
+
+
     def test_resnet_classification_architecture(self):
         model = ScalogramResidualEncoder(args_dict=scalogram_resnet_classification_1, verbose=2)
         tic = time.time()
