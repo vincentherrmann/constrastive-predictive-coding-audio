@@ -32,7 +32,7 @@ midi_controller_mapping = {
 
 
 class MidiController:
-    def __init__(self, port, control_mapping):
+    def __init__(self, port, control_mapping={}):
         self.inport = mido.open_input(port)
         self.outport = mido.open_output(port)
 
@@ -47,6 +47,9 @@ class MidiController:
         self.set_values_thread.daemon = True
         self.set_values_thread.start()
 
+        self.set_control_mapping(control_mapping)
+
+    def set_control_mapping(self, control_mapping):
         self.control_mapping = control_mapping
         if control_mapping is not None:
             for key, control in control_mapping.items():
@@ -68,7 +71,7 @@ class MidiController:
                 self.lock.release()
                 try:
                     target = self.control_mapping[control]
-                    target.set_value(value)
+                    target.set_midi_value(value)
                 except KeyError:
                     print("control", control, "has no target")
                 self.lock.acquire()

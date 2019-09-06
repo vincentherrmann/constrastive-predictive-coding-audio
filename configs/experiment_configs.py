@@ -137,6 +137,17 @@ experiments['e29']['encoder_config'] = scalogram_resnet_configs.scalogram_resnet
 experiments['e29']['ar_model_config'] = autoregressive_model_configs.ar_conv_architecture_5
 experiments['e29']['training_config']['visible_steps'] = 43
 
+experiments['e30'] = copy.deepcopy(experiments['e29'])
+experiments['e30']['ar_model_config'] = autoregressive_model_configs.attention_architecture_2
+
+experiments['e31'] = copy.deepcopy(experiments['e29'])
+experiments['e31']['ar_model_config'] = autoregressive_model_configs.attention_architecture_2
+experiments['e31']['ar_model_config'] = autoregressive_model_configs.ar_conv_architecture_6
+
+experiments['e32'] = copy.deepcopy(experiments['e31'])
+experiments['e32']['training_config']['learning_rate'] = 1e-5
+
+
 experiments['c1'] = classification_default_dict
 experiments['c1']['training_config']['learning_rate'] = 1e-3
 

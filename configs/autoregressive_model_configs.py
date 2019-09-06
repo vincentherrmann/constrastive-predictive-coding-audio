@@ -13,7 +13,8 @@ ar_conv_default_dict = {
     'residual': False,
     'encoding_size': 256,
     'ar_code_size': 256,
-    'activation_register': None
+    'activation_register': None,
+    'self_attention': [False, False, False]
 }
 
 ar_conv_architecture_1 = ar_conv_default_dict.copy()
@@ -44,6 +45,7 @@ ar_conv_architecture_2['stride'] = [1, 1, 1, 1, 1, 1]
 ar_conv_architecture_2['pooling'] = [1, 1, 2, 1, 2, 1]
 ar_conv_architecture_2['batch_norm'] = True
 ar_conv_architecture_2['residual'] = True
+ar_conv_architecture_2['self_attention'] = [False] * 6
 
 ar_conv_architecture_3 = ar_conv_architecture_2.copy()
 ar_conv_architecture_3['channel_count'] = [512, 512, 512, 256, 256, 256, 256]
@@ -55,6 +57,12 @@ ar_conv_architecture_4['channel_count'] = [512, 1024, 512, 512, 256, 256, 256]
 ar_conv_architecture_5 = ar_conv_architecture_4.copy()
 ar_conv_architecture_5['kernel_sizes'] = [5, 4, 3, 3, 3, 5]
 
+ar_conv_architecture_6 = ar_conv_architecture_5.copy()
+ar_conv_architecture_6['channel_count'] = [512] * 5 + [256] * 5
+ar_conv_architecture_6['kernel_sizes'] = [5, 4, 1, 3, 3, 1, 3, 1, 5]
+ar_conv_architecture_6['pooling'] = [1, 1, 2, 1, 1, 2, 1, 1, 1]
+ar_conv_architecture_6['self_attention'] = [False, True, False, False, True, False, True, False, False]
+ar_conv_architecture_6['stride'] = [1] * 9
 
 ar_block_default_dict = scalogram_block_default_dict.copy()
 ar_block_default_dict['in_channels'] = 256

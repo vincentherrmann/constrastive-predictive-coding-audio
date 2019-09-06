@@ -817,6 +817,10 @@ class MainVisualization:
 
         return np.float32([[a, b, c], [d, e, f]])
 
+    # a b c
+    # d e f
+    #     f
+
     def load_frame_list(self):
         while True:
             frame_number, img = self.image_queue.get()

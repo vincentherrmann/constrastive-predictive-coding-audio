@@ -237,6 +237,16 @@ class SocketDataExchange:
         except:
             pass
 
+    def check_receive(self, data, timeout=None):
+        # wait until data is received or timeout. If the received data matches the given data return True, else False.
+        tic = time.time()
+        check_data = None
+        while check_data is None:
+            check_data = self.get_received_data()
+            if timeout is not None and time.time() - tic > timeout:
+                return False
+        return check_data == data
+
 
 class SocketDataExchangeServer(SocketDataExchange):
     def __init__(self, port, host='127.0.0.1', stream_automatically=True):
@@ -244,6 +254,7 @@ class SocketDataExchangeServer(SocketDataExchange):
         self.port = port
         self.host = host
         self.socket = socket.socket()
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.stream_automatically = stream_automatically
 
         connect_thread = threading.Thread(name='connect ot client', target=self.connect_to_client)
@@ -277,6 +288,7 @@ class SocketDataExchangeClient(SocketDataExchange):
         self.port = port
         self.host = host
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.stream_automatically = stream_automatically
 
         try:

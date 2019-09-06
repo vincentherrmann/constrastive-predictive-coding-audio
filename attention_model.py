@@ -72,9 +72,11 @@ class AttentionModel(nn.Module):
     def forward(self, x):
         x = x.permute(2, 0, 1)
         x = self.positional_encoder(x)  # sequence, batch, channels
+        s, n, c = x.shape
+        mask = torch.full([s, s], fill_value=float('-inf')).to(x.device)
+        mask = torch.triu(mask, diagonal=1)
+        x = self.encoder(x, mask=mask)
 
-        x = self.encoder(x)
-
-        x = torch.sum(x, dim=0)
+        x = torch.sum(x, dim=0) / x.shape[0]
         x = self.end_layer(x)
         return x

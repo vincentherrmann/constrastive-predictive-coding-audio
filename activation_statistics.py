@@ -17,8 +17,10 @@ from ml_utilities.pytorch_utilities import *
 
 pp = pprint.PrettyPrinter(indent=4)
 
-experiment = 'e26'
-name = 'snapshots_model_2019-05-20_run_0_100000'
+experiment = 'e32'
+name = 'snapshots_model_2019-08-13_run_0_90000'
+#path = '/Users/vincentherrmann/Documents/Projekte/Immersions/models/e32-2019-08-13'
+path = '../snapshots'
 
 try:
     dev = 'cuda:' + str(torch.cuda.current_device())
@@ -29,11 +31,12 @@ settings = experiments[experiment]
 
 if name is not None:
     settings['snapshot_config']['name'] = name
+    settings['snapshot_config']['snapshot_location'] = path
 
 register = ActivationRegister()
 
-with open('dreaming/calculation_activations_-1e4_noise', 'rb') as handle:
-    reference_statistics = pickle.load(handle)
+# with open('dreaming/calculation_activations_-1e4_noise', 'rb') as handle:
+#     reference_statistics = pickle.load(handle)
 
 model, preprocessing_module, untraced_model = setup_model(cqt_params=settings['cqt_config'],
                                                           encoder_params=settings['encoder_config'],
@@ -42,7 +45,7 @@ model, preprocessing_module, untraced_model = setup_model(cqt_params=settings['c
                                                           device=dev,
                                                           activation_register=register)
 
-settings['snapshot_config']['snapshot_location'] = 'snapshots'
+#settings['snapshot_config']['snapshot_location'] = 'snapshots'
 loaded_model, snapshot_manager, continue_training_at_step = setup_snapshot_manager(model=model,
                                                                             args_dict=settings['snapshot_config'],
                                                                             try_proceeding=True,
@@ -63,7 +66,7 @@ except:
     except:
         raise
 
-clip_length = 64000
+#clip_length = 64000
 
 
 def activation_statistics(activation_dict, avg_dict=None):
@@ -88,6 +91,7 @@ def condense_statistics_dict(avg_dict):
             avg_dict[key][inner_key] = sum / l
     return avg_dict
 
+
 noise_avg_dict = None
 for i in range(10):
     audio_input = (torch.rand(64, 1, input_length, device=dev) * 2. - 1.) * 1e-4
@@ -96,8 +100,9 @@ for i in range(10):
     #plt.colorbar()
     #plt.show()
     output = model(scal)
-    noise_avg_dict = activation_statistics(register.activations, noise_avg_dict)
-noise_avg_dict = condense_statistics_dict(noise_avg_dict)
+    noise_avg_dicts = activation_statistics(register.activations, noise_avg_dict)
+#pprint.pprint(noise_avg_dicts[0])
+noise_avg_dict = condense_statistics_dict(noise_avg_dicts)
 pprint.pprint(noise_avg_dict)
 
 with open('noise_statistics_' + name + '.pickle', 'wb') as handle:
